@@ -1,0 +1,23 @@
+{
+  "name": "meow-night-diner",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "냥포차: 달빛 아래 야식당 — Phaser 3 pixel-art management game",
+  "scripts": {
+    "dev": "vite",
+    "build": "node scripts/clean-dist.mjs && tsc --noEmit && vite build && node scripts/prepare-sites-build.mjs",
+    "typecheck": "tsc --noEmit",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "phaser": "^3.90.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3",
+    "vite": "^6.3.5"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

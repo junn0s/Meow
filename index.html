@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#0b1026" />
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+    <meta
+      name="description"
+      content="비 오는 밤, 고양이 사장님과 함께 포장마차를 키우는 픽셀아트 경영 게임"
+    />
+    <title>냥포차: 달빛 아래 야식당</title>
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="game-frame" aria-label="냥포차 게임">
+        <div class="marquee" aria-hidden="true">
+          <span class="marquee__moon">☾</span>
+          <div>
+            <strong>냥포차</strong>
+            <small>달빛 아래 야식당</small>
+          </div>
+          <span class="marquee__open">OPEN</span>
+        </div>
+        <div id="game-container"></div>
+      </section>
+      <p class="keyboard-hint">
+        <kbd>WASD</kbd><span>이동</span><kbd>SPACE</kbd><span>상호작용</span><kbd>ESC</kbd><span>일시정지</span>
+      </p>
+      <p id="status-message" class="sr-only" aria-live="polite"></p>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

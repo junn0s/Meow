@@ -1,0 +1,177 @@
+import Phaser from "phaser";
+import { getMenuItem } from "../data/menuData";
+import type { MenuItemId } from "../types/game";
+
+export interface CookingTicket {
+  readonly customerId: string;
+  readonly menuItemId: MenuItemId;
+  readonly quantity: number;
+}
+
+export type FoodReadyCallback = (station: CookingStation, ticket: CookingTicket) => void;
+
+export class CookingStation {
+  public readonly menuItemId: MenuItemId;
+  public readonly x: number;
+  public readonly y: number;
+
+  private readonly scene: Phaser.Scene;
+  private readonly sprite: Phaser.GameObjects.Image;
+  private readonly label: Phaser.GameObjects.Text;
+  private readonly lockLabel: Phaser.GameObjects.Text;
+  private readonly progressBackground: Phaser.GameObjects.Rectangle;
+  private readonly progressFill: Phaser.GameObjects.Rectangle;
+  private readonly readyIcon: Phaser.GameObjects.Image;
+  private readonly queue: CookingTicket[] = [];
+  private readonly readyTickets: CookingTicket[] = [];
+  private activeTicket?: CookingTicket;
+  private elapsedMs = 0;
+  private durationMs = 1;
+  private unlocked = false;
+  private speedMultiplier = 1;
+  private onFoodReady?: FoodReadyCallback;
+
+  public constructor(scene: Phaser.Scene, menuItemId: MenuItemId, x: number, y: number) {
+    this.scene = scene;
+    this.menuItemId = menuItemId;
+    this.x = x;
+    this.y = y;
+    const item = getMenuItem(menuItemId);
+    this.sprite = scene.add.image(x, y, `station-${menuItemId}`).setDepth(16);
+    this.label = scene.add
+      .text(x, y + 25, item.name, {
+        fontFamily: '"Gowun Dodum", sans-serif',
+        fontSize: "8px",
+        color: "#ffe7b3",
+        backgroundColor: "#24182acb",
+        padding: { x: 3, y: 1 },
+      })
+      .setOrigin(0.5)
+      .setDepth(18);
+    this.lockLabel = scene.add
+      .text(x, y, "잠김", {
+        fontFamily: '"Gowun Dodum", sans-serif',
+        fontSize: "8px",
+        color: "#aeb4cd",
+        backgroundColor: "#101426e6",
+        padding: { x: 4, y: 2 },
+      })
+      .setOrigin(0.5)
+      .setDepth(19);
+    this.progressBackground = scene.add
+      .rectangle(x - 19, y + 19, 38, 3, 0x21172a, 0.95)
+      .setOrigin(0, 0.5)
+      .setDepth(19)
+      .setVisible(false);
+    this.progressFill = scene.add
+      .rectangle(x - 18, y + 19, 36, 1, 0xffc36a, 1)
+      .setOrigin(0, 0.5)
+      .setDepth(20)
+      .setVisible(false);
+    this.readyIcon = scene.add
+      .image(x + 16, y - 20, `food-${menuItemId}`)
+      .setDepth(24)
+      .setVisible(false);
+    this.setUnlocked(menuItemId === "fishcake");
+  }
+
+  public setUnlocked(unlocked: boolean): void {
+    this.unlocked = unlocked;
+    this.sprite.setAlpha(unlocked ? 1 : 0.28);
+    this.label.setAlpha(unlocked ? 1 : 0.38);
+    this.lockLabel.setVisible(!unlocked);
+  }
+
+  public isUnlocked(): boolean {
+    return this.unlocked;
+  }
+
+  public setSpeedMultiplier(multiplier: number): void {
+    this.speedMultiplier = Phaser.Math.Clamp(multiplier, 0.2, 2);
+  }
+
+  public setReadyCallback(callback: FoodReadyCallback): void {
+    this.onFoodReady = callback;
+  }
+
+  public enqueue(ticket: CookingTicket): void {
+    if (!this.unlocked) {
+      return;
+    }
+    this.queue.push(ticket);
+    this.startNextIfIdle();
+  }
+
+  public update(deltaMs: number): void {
+    if (this.activeTicket === undefined) {
+      this.startNextIfIdle();
+      return;
+    }
+
+    this.elapsedMs += deltaMs;
+    const ratio = Phaser.Math.Clamp(this.elapsedMs / this.durationMs, 0, 1);
+    this.progressFill.width = 36 * ratio;
+    if (this.elapsedMs < this.durationMs) {
+      return;
+    }
+
+    const completedTicket = this.activeTicket;
+    this.activeTicket = undefined;
+    this.readyTickets.push(completedTicket);
+    this.progressBackground.setVisible(false);
+    this.progressFill.setVisible(false);
+    this.readyIcon.setVisible(true);
+    this.scene.tweens.add({
+      targets: this.readyIcon,
+      y: this.y - 24,
+      duration: 230,
+      yoyo: true,
+      ease: "Sine.Out",
+    });
+    this.onFoodReady?.(this, completedTicket);
+    this.startNextIfIdle();
+  }
+
+  public takeReadyTicket(): CookingTicket | undefined {
+    const ticket = this.readyTickets.shift();
+    this.readyIcon.setVisible(this.readyTickets.length > 0);
+    return ticket;
+  }
+
+  public returnReadyTicket(ticket: CookingTicket): void {
+    this.readyTickets.unshift(ticket);
+    this.readyIcon.setVisible(true);
+  }
+
+  public peekReadyTicket(): CookingTicket | undefined {
+    return this.readyTickets[0];
+  }
+
+  public getReadyCount(): number {
+    return this.readyTickets.length;
+  }
+
+  public getQueueCount(): number {
+    return this.queue.length + Number(this.activeTicket !== undefined);
+  }
+
+  public distanceTo(x: number, y: number): number {
+    return Phaser.Math.Distance.Between(this.x, this.y, x, y);
+  }
+
+  private startNextIfIdle(): void {
+    if (this.activeTicket !== undefined || this.queue.length === 0) {
+      return;
+    }
+
+    this.activeTicket = this.queue.shift();
+    if (this.activeTicket === undefined) {
+      return;
+    }
+    this.elapsedMs = 0;
+    this.durationMs = getMenuItem(this.activeTicket.menuItemId).cookingTimeMs * this.speedMultiplier;
+    this.progressFill.width = 0;
+    this.progressBackground.setVisible(true);
+    this.progressFill.setVisible(true);
+  }
+}
