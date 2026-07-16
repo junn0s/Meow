@@ -136,4 +136,5 @@ ENTERING → WAITING_FOR_SEAT → MOVING_TO_SEAT → ORDERING
 - 후반 초보는 평균보다 25~40% 느리고 숙련은 20~30% 빠름
 - FEVER 예상 매출 기여 10~17%
 - 타입·경제/진행/피버/오프라인/저장 테스트·빌드·접근성 정적 감사 통과
-- 신규 7~10단계 실브라우저 E2E와 실제 게시 URL은 2026-07-16 실행 환경 사용량 제한으로 보류
+- GitHub Pages Actions 빌드·배포와 공개 URL `https://junn0s.github.io/Meow/`의 HTTPS 200 응답 확인
+- 신규 7~10단계 실브라우저 E2E는 2026-07-16 실행 환경 사용량 제한으로 보류

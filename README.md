@@ -96,6 +96,8 @@ npm run test:release
 
 프로덕션 빌드는 `dist/client`, Sites worker는 `dist/server/index.js`에 생성됩니다. `.openai/hosting.json`의 기존 Sites 프로젝트를 사용하며, GitHub Pages용 워크플로도 유지합니다. Vite의 상대 `base` 설정으로 저장소 하위 경로에서도 에셋을 불러옵니다.
 
+- GitHub Pages: <https://junn0s.github.io/Meow/>
+
 ## 검증 현황
 
 2026-07-16 기준 다음 자동 검사를 통과했습니다.
@@ -108,7 +110,8 @@ npm run test:release
 | 가격 이분탐색·P50/P75/P90 합격선 | 통과 |
 | 프로덕션/Sites 빌드 | 통과 |
 | 접근성·reduced-motion·광원/파티클 상한 정적 감사 | 통과 |
-| 7~10단계 신규 실브라우저 E2E·실제 게시 URL | 실행 환경 사용량 제한으로 보류 |
+| GitHub Pages Actions 빌드·배포·HTTPS 응답 | 통과 |
+| 7~10단계 신규 실브라우저 E2E | 실행 환경 사용량 제한으로 보류 |
 
 ## 문서
 
