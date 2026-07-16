@@ -16,6 +16,12 @@ import { ProgressionSystem } from "../systems/ProgressionSystem";
 import { calculateOfflineReward } from "../systems/OfflineEarningsSystem";
 import { SaveSystem } from "../systems/SaveSystem";
 import {
+  canReceiveFood,
+  canSpawnCustomer,
+  CUSTOMER_ARRIVAL_INTERVAL_MULTIPLIER,
+  selectFoodRecipient,
+} from "../systems/ServiceFlowRules";
+import {
   CustomerState,
   type GrowthStage,
   type MenuItemId,
@@ -163,6 +169,10 @@ export class GameScene extends Phaser.Scene {
       rating: this.currentSave.rating,
     });
     this.progression = new ProgressionSystem(this.economy, this.currentSave.progression);
+    const debugStage = readDebugStage(window.location.search);
+    if (debugStage !== undefined) {
+      this.progression.debugGrantThroughStage(debugStage);
+    }
     this.currentEffects = this.progression.getEffects();
     this.reducedMotion = this.currentSave.settings.reducedMotion
       || window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
@@ -430,9 +440,9 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
-    const maxWaiting = this.currentEffects.seatCount + 4;
-    if (this.customers.size < maxWaiting) {
+    if (canSpawnCustomer(this.customers.values(), this.currentEffects.seatCount)) {
       this.spawnCustomer();
+      return;
     }
     this.scheduleNextSpawn();
   }
@@ -493,6 +503,7 @@ export class GameScene extends Phaser.Scene {
       : 1;
     const safetyMultiplier = this.safetySlowdownRemainingMs > 0 ? 1.15 : 1;
     this.spawnCountdownMs = config.baseSpawnIntervalMs
+      * CUSTOMER_ARRIVAL_INTERVAL_MULTIPLIER
       * jitter
       * rushMultiplier
       * safetyMultiplier;
@@ -627,12 +638,38 @@ export class GameScene extends Phaser.Scene {
     for (const chef of this.chefs) {
       if (chef.assignedCustomerId === customer.customerId) this.releaseChef(chef.id);
     }
-    if (this.player.getCarriedCustomerId() === customer.customerId) {
-      this.player.clearCarriedFood();
-      this.hud.setHeldFood();
-      this.ticketStats.cancelled += 1;
+    const carriedFood = this.player.getCarriedFood();
+    if (
+      carriedFood !== undefined
+      && carriedFood === customer.orderId
+      && this.player.getCarriedQuantity() === customer.orderQuantity
+    ) {
+      const excludedCustomerIds = new Set(this.serverTargetCustomerIds);
+      excludedCustomerIds.add(customer.customerId);
+      const alternative = selectFoodRecipient(
+        this.customers.values(),
+        { menuItemId: carriedFood, quantity: this.player.getCarriedQuantity() },
+        excludedCustomerIds,
+        this.player,
+      );
+      if (alternative === undefined) {
+        this.player.clearCarriedFood();
+        this.hud.setHeldFood();
+        this.ticketStats.cancelled += 1;
+      } else if (this.player.getCarriedTicketCustomerId() === customer.customerId) {
+        const station = this.stations.get(carriedFood);
+        const cancelledTickets = station?.cancelTicketsForCustomer(alternative.customerId) ?? [];
+        this.ticketStats.cancelled += cancelledTickets.length;
+        for (const ticket of cancelledTickets) {
+          if (ticket.chefWorkerId !== undefined) this.releaseChef(ticket.chefWorkerId);
+        }
+        this.player.setCarriedFood(
+          carriedFood,
+          this.player.getCarriedQuantity(),
+          alternative.customerId,
+        );
+      }
     }
-    this.serverTargetCustomerIds.delete(customer.customerId);
     this.comboCount = 0;
     this.consecutiveWalkouts += 1;
     this.economy.recordServiceScore(0);
@@ -755,7 +792,8 @@ export class GameScene extends Phaser.Scene {
         chef.sprite.setTexture(`chef-${chef.ordinal}-${this.workerAnimationFrame}`);
       }
       for (const server of this.servers) {
-        server.sprite.setTexture(`server-${server.ordinal}-${this.workerAnimationFrame}`);
+        const frame = server.busy ? this.workerAnimationFrame : 0;
+        server.sprite.setTexture(`server-${server.ordinal}-${frame}`);
       }
     }
     this.dispatchChefOrders();
@@ -798,15 +836,16 @@ export class GameScene extends Phaser.Scene {
       let assigned = false;
       for (const station of this.stations.values()) {
         const ticket = station.peekReadyTicket();
-        if (ticket === undefined || this.serverTargetCustomerIds.has(ticket.customerId)) continue;
-        const target = this.findWaitingCustomer(ticket.customerId, ticket.menuItemId);
-        if (target === undefined) {
-          station.takeReadyTicket();
-          this.ticketStats.wasted += 1;
-          continue;
-        }
+        if (ticket === undefined) continue;
+        const target = selectFoodRecipient(
+          this.customers.values(),
+          ticket,
+          this.serverTargetCustomerIds,
+          station,
+        );
+        if (target === undefined) continue;
         station.takeReadyTicket();
-        this.startServerDelivery(worker, station, ticket);
+        this.startServerDelivery(worker, station, ticket, target);
         assigned = true;
         break;
       }
@@ -814,71 +853,101 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private startServerDelivery(worker: WorkerAgent, station: CookingStation, ticket: CookingTicket): void {
+  private startServerDelivery(
+    worker: WorkerAgent,
+    station: CookingStation,
+    ticket: CookingTicket,
+    target: Customer,
+  ): void {
     const server = worker.sprite;
     worker.busy = true;
-    worker.assignedCustomerId = ticket.customerId;
+    worker.assignedCustomerId = target.customerId;
     worker.assignedStationId = station.menuItemId;
-    this.serverTargetCustomerIds.add(ticket.customerId);
+    this.serverTargetCustomerIds.add(target.customerId);
+    this.tweens.killTweensOf(server);
     server
       .setTexture(`server-${worker.ordinal}-1`)
       .setDepth(300)
-      .setPosition(station.x + 19, station.y + 20);
+      .setFlipX(station.x < server.x);
     const actionTime = getWorkerActionTimeMs("server", worker.ordinal);
-    this.time.delayedCall(160, () => {
-      const target = this.findWaitingCustomer(ticket.customerId, ticket.menuItemId);
-      if (target === undefined || !server.active) {
-        if (server.active) this.ticketStats.wasted += 1;
-        this.releaseServer(worker);
-        return;
-      }
-      this.tweens.add({
-        targets: server,
-        x: target.x + 17,
-        y: target.y,
-        duration: Math.round(actionTime * 0.5),
-        ease: "Sine.InOut",
-        onUpdate: () => server.setDepth(50 + Math.round(server.y)),
-        onComplete: () => {
-          const deliveryTarget =
-            target.active && target.customerState === CustomerState.WAITING_FOR_FOOD
-              ? target
-              : this.findWaitingCustomer(ticket.customerId, ticket.menuItemId);
-          if (deliveryTarget !== undefined) {
-            this.serveCustomer(deliveryTarget, true, worker);
+    this.tweens.add({
+      targets: server,
+      x: station.x + 19,
+      y: station.y + 20,
+      duration: Math.round(actionTime * 0.2),
+      ease: "Sine.InOut",
+      onUpdate: () => server.setDepth(50 + Math.round(server.y)),
+      onComplete: () => {
+        if (!server.active || !canReceiveFood(target, ticket)) {
+          if (ticket.customerId === target.customerId) {
+            this.ticketStats.cancelled += 1;
           } else {
-            this.ticketStats.wasted += 1;
+            station.returnReadyTicket(ticket);
           }
-          this.serverTargetCustomerIds.delete(ticket.customerId);
-          this.tweens.add({
-            targets: server,
-            x: worker.homeX,
-            y: worker.homeY,
-            duration: Math.round(actionTime * 0.35),
-            onComplete: () => {
-              this.releaseServer(worker, false);
-            },
-          });
-        },
-      });
+          this.releaseServer(worker);
+          return;
+        }
+        server.setFlipX(target.x < server.x);
+        this.tweens.add({
+          targets: server,
+          x: target.x + 17,
+          y: target.y,
+          duration: Math.round(actionTime * 0.45),
+          ease: "Sine.InOut",
+          onUpdate: () => server.setDepth(50 + Math.round(server.y)),
+          onComplete: () => {
+            if (target.active && canReceiveFood(target, ticket)) {
+              this.serveCustomer(target, true, worker, ticket);
+            } else {
+              if (ticket.customerId === target.customerId) {
+                this.ticketStats.cancelled += 1;
+              } else {
+                station.returnReadyTicket(ticket);
+              }
+            }
+            this.serverTargetCustomerIds.delete(target.customerId);
+            server.setFlipX(worker.homeX < server.x);
+            this.tweens.add({
+              targets: server,
+              x: worker.homeX,
+              y: worker.homeY,
+              duration: Math.round(actionTime * 0.25),
+              ease: "Sine.InOut",
+              onUpdate: () => server.setDepth(50 + Math.round(server.y)),
+              onComplete: () => this.releaseServer(worker, false),
+            });
+          },
+        });
+      },
     });
   }
 
-  private findWaitingCustomer(customerId: string, menuItemId: MenuItemId): Customer | undefined {
-    const exact = this.customers.get(customerId);
-    if (
-      exact?.customerState === CustomerState.WAITING_FOR_FOOD &&
-      exact.orderId === menuItemId
-    ) {
-      return exact;
-    }
-    return undefined;
-  }
-
-  private serveCustomer(customer: Customer, automated: boolean, worker?: WorkerAgent): void {
+  private serveCustomer(
+    customer: Customer,
+    automated: boolean,
+    worker?: WorkerAgent,
+    servedTicket?: CookingTicket,
+  ): void {
     if (customer.customerState !== CustomerState.WAITING_FOR_FOOD) {
       this.ticketStats.duplicateServices += 1;
       return;
+    }
+    if (servedTicket !== undefined && servedTicket.customerId !== customer.customerId) {
+      const station = this.stations.get(servedTicket.menuItemId);
+      const ticketOwner = this.customers.get(servedTicket.customerId);
+      if (ticketOwner !== undefined && canReceiveFood(ticketOwner, servedTicket)) {
+        station?.reassignTicketCustomer(
+          customer.customerId,
+          servedTicket.customerId,
+          servedTicket.quantity,
+        );
+      } else {
+        const cancelledTickets = station?.cancelTicketsForCustomer(customer.customerId) ?? [];
+        this.ticketStats.cancelled += cancelledTickets.length;
+        for (const ticket of cancelledTickets) {
+          if (ticket.chefWorkerId !== undefined) this.releaseChef(ticket.chefWorkerId);
+        }
+      }
     }
     customer.serve();
     this.ticketStats.served += 1;
@@ -1091,20 +1160,34 @@ export class GameScene extends Phaser.Scene {
   private findInteraction(): InteractionTarget | undefined {
     const carriedFood = this.player.getCarriedFood();
     if (carriedFood !== undefined) {
+      const carriedQuantity = this.player.getCarriedQuantity();
       const customer = this.findNearestCustomer(
         (candidate) =>
-          candidate.customerState === CustomerState.WAITING_FOR_FOOD &&
-          candidate.orderId === carriedFood &&
-          candidate.customerId === this.player.getCarriedCustomerId() &&
-          !this.serverTargetCustomerIds.has(candidate.customerId),
+          canReceiveFood(
+            candidate,
+            { menuItemId: carriedFood, quantity: carriedQuantity },
+            this.serverTargetCustomerIds,
+          ),
         34,
       );
       if (customer !== undefined) {
+        const ticketCustomerId = this.player.getCarriedTicketCustomerId();
         return {
           x: customer.x,
           y: customer.y,
           label: "서빙하기",
-          action: () => this.serveCustomer(customer, false),
+          action: () => this.serveCustomer(
+            customer,
+            false,
+            undefined,
+            ticketCustomerId === undefined
+              ? undefined
+              : {
+                  customerId: ticketCustomerId,
+                  menuItemId: carriedFood,
+                  quantity: carriedQuantity,
+                },
+          ),
         };
       }
       return undefined;
@@ -1170,11 +1253,11 @@ export class GameScene extends Phaser.Scene {
     if (ticket === undefined) {
       return;
     }
-    this.player.setCarriedFood(ticket.menuItemId, ticket.customerId);
+    this.player.setCarriedFood(ticket.menuItemId, ticket.quantity, ticket.customerId);
     this.hud.setHeldFood(ticket.menuItemId);
     this.sfx.click();
     this.toast.show(`${getMenuItem(ticket.menuItemId).name}을 들었어요`);
-    setStatus(`${getMenuItem(ticket.menuItemId).name}을 들었습니다. 주문한 손님에게 가져다주세요.`);
+    setStatus(`${getMenuItem(ticket.menuItemId).name} ×${ticket.quantity}을 들었습니다. 같은 주문을 기다리는 손님에게 가져다주세요.`);
   }
 
   private handleSpace(): void {
@@ -1602,17 +1685,24 @@ export class GameScene extends Phaser.Scene {
     worker.busy = false;
     worker.assignedCustomerId = undefined;
     worker.assignedStationId = undefined;
+    this.tweens.killTweensOf(worker.sprite);
+    worker.sprite.setTexture(`server-${worker.ordinal}-0`);
     if (!returnHome) {
-      worker.sprite.setDepth(150 + worker.homeY);
+      worker.sprite
+        .setPosition(worker.homeX, worker.homeY)
+        .setFlipX(false)
+        .setDepth(150 + worker.homeY);
       return;
     }
-    this.tweens.killTweensOf(worker.sprite);
+    worker.sprite.setFlipX(worker.homeX < worker.sprite.x);
     this.tweens.add({
       targets: worker.sprite,
       x: worker.homeX,
       y: worker.homeY,
       duration: 280,
-      onComplete: () => worker.sprite.setDepth(150 + worker.homeY),
+      onComplete: () => worker.sprite
+        .setFlipX(false)
+        .setDepth(150 + worker.homeY),
     });
   }
 
@@ -1675,7 +1765,7 @@ export class GameScene extends Phaser.Scene {
           x: Math.round(this.player.x),
           y: Math.round(this.player.y),
           carrying: this.player.getCarriedFood(),
-          carryingCustomerId: this.player.getCarriedCustomerId(),
+          carryingQuantity: this.player.getCarriedQuantity(),
         },
         customers: [...this.customers.values()].map((customer) => ({
           id: customer.customerId,
@@ -1791,6 +1881,14 @@ function getRushConfig(stage: GrowthStage): {
   return config === undefined
     ? undefined
     : { periodMs: config[0], durationMs: config[1], spawnMultiplier: config[2] };
+}
+
+function readDebugStage(search: string): GrowthStage | undefined {
+  const params = new URLSearchParams(search);
+  if (!params.has("debug")) return undefined;
+  const raw = Number(params.get("debugStage"));
+  if (!Number.isInteger(raw) || raw < 1 || raw > 30) return undefined;
+  return raw as GrowthStage;
 }
 
 function getWorkerActionTimeMs(role: WorkerRole, ordinal: number): number {

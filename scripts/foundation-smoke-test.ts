@@ -11,11 +11,17 @@ import { EconomySystem } from "../src/game/systems/EconomySystem";
 import { ProgressionSystem } from "../src/game/systems/ProgressionSystem";
 import { calculateOfflineReward } from "../src/game/systems/OfflineEarningsSystem";
 import {
+  canSpawnCustomer,
+  CUSTOMER_ARRIVAL_INTERVAL_MULTIPLIER,
+  MAX_WAITING_CUSTOMERS,
+  selectFoodRecipient,
+} from "../src/game/systems/ServiceFlowRules";
+import {
   DEFAULT_SAVE_KEY,
   SAVE_DATA_VERSION,
   SaveSystem,
 } from "../src/game/systems/SaveSystem";
-import type { StorageLike } from "../src/game/types/game";
+import { CustomerState, type StorageLike } from "../src/game/types/game";
 
 class MapStorage implements StorageLike {
   private readonly values = new Map<string, string>();
@@ -95,6 +101,59 @@ assert.deepEqual(calculateOfflineReward({
   nextPurchaseCost: 1_000,
 }), { elapsedMs: 4 * 60 * 60 * 1_000, amount: 450, capped: true });
 
+const serviceCustomers = [
+  {
+    customerId: "first",
+    customerState: CustomerState.WAITING_FOR_FOOD,
+    orderId: "fishcake" as const,
+    orderQuantity: 1,
+    patienceMs: 20_000,
+    maxPatienceMs: 30_000,
+    x: 10,
+    y: 10,
+  },
+  {
+    customerId: "urgent",
+    customerState: CustomerState.WAITING_FOR_FOOD,
+    orderId: "fishcake" as const,
+    orderQuantity: 1,
+    patienceMs: 5_000,
+    maxPatienceMs: 30_000,
+    x: 100,
+    y: 100,
+  },
+];
+assert.equal(
+  selectFoodRecipient(serviceCustomers, { menuItemId: "fishcake", quantity: 1 })?.customerId,
+  "urgent",
+  "ready food should go to any compatible guest, prioritizing the most impatient",
+);
+assert.equal(
+  selectFoodRecipient(
+    serviceCustomers,
+    { menuItemId: "fishcake", quantity: 1 },
+    new Set(["urgent"]),
+  )?.customerId,
+  "first",
+  "a server-reserved guest must not receive the same order twice",
+);
+assert.equal(
+  selectFoodRecipient(serviceCustomers, { menuItemId: "fishcake", quantity: 2 }),
+  undefined,
+  "orders with different quantities must not be treated as interchangeable",
+);
+assert.equal(MAX_WAITING_CUSTOMERS, 2);
+assert.equal(CUSTOMER_ARRIVAL_INTERVAL_MULTIPLIER, 1.12);
+assert.equal(canSpawnCustomer([
+  ...serviceCustomers,
+  { ...serviceCustomers[0], customerId: "queue-1", customerState: CustomerState.WAITING_FOR_SEAT },
+], 2), true);
+assert.equal(canSpawnCustomer([
+  ...serviceCustomers,
+  { ...serviceCustomers[0], customerId: "queue-1", customerState: CustomerState.WAITING_FOR_SEAT },
+  { ...serviceCustomers[0], customerId: "queue-2", customerState: CustomerState.ENTERING },
+], 2), false, "the visible waiting line must be capped at two guests");
+
 const storage = new MapStorage();
 storage.setItem("meow-night-diner.save.v2", JSON.stringify({
   version: 2,
@@ -119,4 +178,4 @@ assert.equal(migrated.progression.menuProgress.length, 6);
 assert.equal(migrated.settings.reducedMotion, false);
 assert.ok(storage.getItem(DEFAULT_SAVE_KEY), "migration must persist a v3 copy");
 
-process.stdout.write("Foundation smoke tests: PASS (economy, progression, fever, offline, clock, save migration)\n");
+process.stdout.write("Foundation smoke tests: PASS (economy, progression, service flow, fever, offline, clock, save migration)\n");

@@ -60,7 +60,7 @@ export interface MeowDinerDebugState {
     readonly x: number;
     readonly y: number;
     readonly carrying?: string;
-    readonly carryingCustomerId?: string;
+    readonly carryingQuantity: number;
   };
   readonly customers: readonly {
     readonly id: string;

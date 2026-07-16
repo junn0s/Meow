@@ -174,6 +174,41 @@ export class CookingStation {
     return this.queue.length + Number(this.activeTicket !== undefined);
   }
 
+  public reassignTicketCustomer(
+    fromCustomerId: string,
+    toCustomerId: string,
+    quantity: number,
+  ): boolean {
+    const reassign = (ticket: CookingTicket): CookingTicket => ({
+      ...ticket,
+      customerId: toCustomerId,
+    });
+    const queueIndex = this.queue.findIndex(
+      (ticket) => ticket.customerId === fromCustomerId && ticket.quantity === quantity,
+    );
+    if (queueIndex >= 0) {
+      const ticket = this.queue[queueIndex];
+      if (ticket !== undefined) this.queue[queueIndex] = reassign(ticket);
+      return ticket !== undefined;
+    }
+    const readyIndex = this.readyTickets.findIndex(
+      (ticket) => ticket.customerId === fromCustomerId && ticket.quantity === quantity,
+    );
+    if (readyIndex >= 0) {
+      const ticket = this.readyTickets[readyIndex];
+      if (ticket !== undefined) this.readyTickets[readyIndex] = reassign(ticket);
+      return ticket !== undefined;
+    }
+    if (
+      this.activeTicket?.customerId === fromCustomerId
+      && this.activeTicket.quantity === quantity
+    ) {
+      this.activeTicket = reassign(this.activeTicket);
+      return true;
+    }
+    return false;
+  }
+
   public cancelTicketsForCustomer(customerId: string): CookingTicket[] {
     const cancelled: CookingTicket[] = [];
     for (let index = this.queue.length - 1; index >= 0; index -= 1) {
