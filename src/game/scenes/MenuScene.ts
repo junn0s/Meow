@@ -4,6 +4,7 @@ import { SoundManager } from "../audio/SoundManager";
 import { SaveSystem } from "../systems/SaveSystem";
 import { PixelButton } from "../../ui/PixelButton";
 import { configureHighDefinitionScene } from "../art/Presentation";
+import { touchInput } from "../input/TouchControls";
 
 export class MenuScene extends Phaser.Scene {
   private readonly saveSystem = new SaveSystem();
@@ -126,8 +127,13 @@ export class MenuScene extends Phaser.Scene {
     const keyboard = this.input.keyboard;
     keyboard?.once("keydown-ENTER", primaryAction);
     keyboard?.once("keydown-N", () => this.confirmNewGame(primaryButton));
-    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.effects?.dispose());
-    setStatus("메뉴 화면. 엔터 키로 게임을 시작할 수 있습니다.");
+    const removeTouchAction = touchInput.subscribe("action", primaryAction);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      removeTouchAction();
+      touchInput.resetDirections();
+      this.effects?.dispose();
+    });
+    setStatus("메뉴 화면. 시작 버튼을 누르거나 행동 버튼으로 게임을 시작할 수 있습니다.");
   }
 
   private confirmNewGame(primaryButton: PixelButton): void {

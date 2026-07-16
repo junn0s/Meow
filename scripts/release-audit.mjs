@@ -21,6 +21,12 @@ assert.match(styles, /min-width: 44px/u, "touch targets must be at least 44px");
 const html = read("index.html");
 assert.match(html, /aria-live="polite"/u);
 assert.match(html, /aria-label="모바일 게임 조작"/u);
+assert.match(html, /data-touch-direction="up"/u);
+assert.match(html, /data-touch-command="action"/u);
+const touchControls = read("src/game/input/TouchControls.ts");
+assert.match(touchControls, /pointercancel/u, "touch cancellation must release movement");
+assert.match(touchControls, /visibilitychange/u, "hidden tabs must reset held directions");
+assert.doesNotMatch(read("src/main.ts"), /new KeyboardEvent/u, "touch must not rely on synthetic keyboard events");
 
 assert.ok(contrastRatio("#d9f5ff", "#11162c") >= 4.5, "HUD text contrast is below 4.5:1");
 assert.ok(contrastRatio("#45ffd2", "#2e3855") >= 3, "fever indicator contrast is below 3:1");

@@ -35,6 +35,7 @@ import { PixelButton } from "../../ui/PixelButton";
 import { ToastManager } from "../../ui/ToastManager";
 import { UpgradePanel } from "../../ui/UpgradePanel";
 import { configureHighDefinitionScene, LOGICAL_HEIGHT, LOGICAL_WIDTH } from "../art/Presentation";
+import { touchInput } from "../input/TouchControls";
 
 export interface GameSceneData {
   readonly newGame?: boolean;
@@ -140,6 +141,9 @@ export class GameScene extends Phaser.Scene {
   private ticketStats = { accepted: 0, completed: 0, served: 0, cancelled: 0, wasted: 0, duplicateServices: 0 };
   private removeEconomyListener?: () => void;
   private removeProgressionListener?: () => void;
+  private removeTouchActionListener?: () => void;
+  private removeTouchPauseListener?: () => void;
+  private debugStatusElement?: HTMLElement;
 
   public constructor() {
     super("GameScene");
@@ -260,6 +264,7 @@ export class GameScene extends Phaser.Scene {
     this.hud.setWorldTime(visualState);
     this.atmosphere.update(stepMs);
     this.player.update(stepMs);
+    this.updateDebugTelemetry();
     this.updateCustomers(stepMs);
     this.updateStations(stepMs);
     this.updateWorkers(stepMs);
@@ -411,12 +416,13 @@ export class GameScene extends Phaser.Scene {
 
   private createInputHandlers(): void {
     const keyboard = this.input.keyboard;
-    if (keyboard === null) {
-      return;
+    if (keyboard !== null) {
+      keyboard.on("keydown-SPACE", this.handleSpace, this);
+      keyboard.on("keydown-ESC", this.togglePause, this);
+      keyboard.on("keydown-M", this.toggleMute, this);
     }
-    keyboard.on("keydown-SPACE", this.handleSpace, this);
-    keyboard.on("keydown-ESC", this.togglePause, this);
-    keyboard.on("keydown-M", this.toggleMute, this);
+    this.removeTouchActionListener = touchInput.subscribe("action", () => this.handleSpace());
+    this.removeTouchPauseListener = touchInput.subscribe("pause", () => this.togglePause());
   }
 
   private createSubscriptions(): void {
@@ -1710,6 +1716,7 @@ export class GameScene extends Phaser.Scene {
     if (!new URLSearchParams(window.location.search).has("debug")) {
       return;
     }
+    this.debugStatusElement = document.querySelector<HTMLElement>("#status-message") ?? undefined;
     window.__MEOW_DINER__ = {
       getState: () => ({
         economy: this.economy.getState(),
@@ -1853,6 +1860,16 @@ export class GameScene extends Phaser.Scene {
     this.saveProgress(this.clearing || this.progression.isGameComplete());
     this.removeEconomyListener?.();
     this.removeProgressionListener?.();
+    this.removeTouchActionListener?.();
+    this.removeTouchPauseListener?.();
+    this.removeTouchActionListener = undefined;
+    this.removeTouchPauseListener = undefined;
+    touchInput.resetDirections();
+    if (this.debugStatusElement !== undefined) {
+      delete this.debugStatusElement.dataset.playerX;
+      delete this.debugStatusElement.dataset.playerY;
+      this.debugStatusElement = undefined;
+    }
     this.game.events.off("app-before-unload", this.saveProgress, this);
     const keyboard = this.input.keyboard;
     keyboard?.off("keydown-SPACE", this.handleSpace, this);
@@ -1861,6 +1878,12 @@ export class GameScene extends Phaser.Scene {
     this.sfx.dispose();
     this.atmosphere.destroy();
     window.__MEOW_DINER__ = undefined;
+  }
+
+  private updateDebugTelemetry(): void {
+    if (this.debugStatusElement === undefined) return;
+    this.debugStatusElement.dataset.playerX = this.player.x.toFixed(1);
+    this.debugStatusElement.dataset.playerY = this.player.y.toFixed(1);
   }
 }
 

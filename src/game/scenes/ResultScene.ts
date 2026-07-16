@@ -4,6 +4,7 @@ import { SoundManager } from "../audio/SoundManager";
 import { PixelButton } from "../../ui/PixelButton";
 import { SaveSystem } from "../systems/SaveSystem";
 import { configureHighDefinitionScene } from "../art/Presentation";
+import { touchInput } from "../input/TouchControls";
 
 export interface ResultSceneData {
   readonly money?: number;
@@ -73,10 +74,16 @@ export class ResultScene extends Phaser.Scene {
         .setDepth(31);
     });
 
-    new PixelButton(this, 240, 210, "새로운 밤 시작", () => {
+    const startNewGame = (): void => {
       sound.click();
       this.scene.start("GameScene", { newGame: true });
-    }, { width: 140, height: 28, primary: true, fontSize: 10 }).setDepth(40);
+    };
+    new PixelButton(this, 240, 210, "새로운 밤 시작", startNewGame, {
+      width: 140,
+      height: 28,
+      primary: true,
+      fontSize: 10,
+    }).setDepth(40);
     new PixelButton(this, 240, 243, "타이틀로", () => {
       sound.click();
       this.scene.start("MenuScene");
@@ -98,7 +105,12 @@ export class ResultScene extends Phaser.Scene {
         repeat: reducedMotion ? 0 : -1,
       });
     }
-    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => sound.dispose());
+    const removeTouchAction = touchInput.subscribe("action", startNewGame);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      removeTouchAction();
+      touchInput.resetDirections();
+      sound.dispose();
+    });
     setStatus("달빛 야식당을 완성했습니다.");
   }
 }

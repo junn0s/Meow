@@ -16,6 +16,7 @@ import {
   MAX_WAITING_CUSTOMERS,
   selectFoodRecipient,
 } from "../src/game/systems/ServiceFlowRules";
+import { TouchInputState } from "../src/game/input/TouchControls";
 import {
   DEFAULT_SAVE_KEY,
   SAVE_DATA_VERSION,
@@ -154,6 +155,23 @@ assert.equal(canSpawnCustomer([
   { ...serviceCustomers[0], customerId: "queue-2", customerState: CustomerState.ENTERING },
 ], 2), false, "the visible waiting line must be capped at two guests");
 
+const touchInput = new TouchInputState();
+touchInput.pressDirection(11, "left");
+touchInput.pressDirection(12, "up");
+assert.equal(touchInput.isDirectionDown("left"), true);
+assert.equal(touchInput.isDirectionDown("up"), true, "two-finger diagonal movement must be supported");
+touchInput.releasePointer(11);
+assert.equal(touchInput.isDirectionDown("left"), false);
+assert.equal(touchInput.isDirectionDown("up"), true);
+touchInput.resetDirections();
+assert.equal(touchInput.isDirectionDown("up"), false, "blur and visibility reset must stop movement");
+let actionCount = 0;
+const removeActionListener = touchInput.subscribe("action", () => actionCount += 1);
+touchInput.trigger("action");
+removeActionListener();
+touchInput.trigger("action");
+assert.equal(actionCount, 1, "touch command listeners must be removable on scene shutdown");
+
 const storage = new MapStorage();
 storage.setItem("meow-night-diner.save.v2", JSON.stringify({
   version: 2,
@@ -178,4 +196,4 @@ assert.equal(migrated.progression.menuProgress.length, 6);
 assert.equal(migrated.settings.reducedMotion, false);
 assert.ok(storage.getItem(DEFAULT_SAVE_KEY), "migration must persist a v3 copy");
 
-process.stdout.write("Foundation smoke tests: PASS (economy, progression, service flow, fever, offline, clock, save migration)\n");
+process.stdout.write("Foundation smoke tests: PASS (economy, progression, service flow, touch input, fever, offline, clock, save migration)\n");

@@ -5,6 +5,7 @@ import { MenuScene } from "./game/scenes/MenuScene";
 import { GameScene } from "./game/scenes/GameScene";
 import { ResultScene } from "./game/scenes/ResultScene";
 import { RENDER_HEIGHT, RENDER_WIDTH } from "./game/art/Presentation";
+import { bindTouchControls } from "./game/input/TouchControls";
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
@@ -37,31 +38,9 @@ const config: Phaser.Types.Core.GameConfig = {
 };
 
 const game = new Phaser.Game(config);
+const removeTouchControls = bindTouchControls();
 
 window.addEventListener("beforeunload", () => {
+  removeTouchControls();
   game.events.emit("app-before-unload");
 });
-
-for (const button of document.querySelectorAll<HTMLButtonElement>("[data-game-key]")) {
-  const key = button.dataset.gameKey;
-  if (key === undefined) continue;
-  const emit = (type: "keydown" | "keyup"): void => {
-    window.dispatchEvent(new KeyboardEvent(type, {
-      key: key === "Space" ? " " : key,
-      code: key,
-      bubbles: true,
-    }));
-  };
-  button.addEventListener("pointerdown", (event) => {
-    event.preventDefault();
-    button.setPointerCapture(event.pointerId);
-    emit("keydown");
-  });
-  const release = (event: PointerEvent): void => {
-    event.preventDefault();
-    emit("keyup");
-  };
-  button.addEventListener("pointerup", release);
-  button.addEventListener("pointercancel", release);
-  button.addEventListener("lostpointercapture", () => emit("keyup"));
-}

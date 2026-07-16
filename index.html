@@ -29,13 +29,13 @@
       </p>
       <section class="touch-controls" aria-label="모바일 게임 조작">
         <div class="touch-controls__pad" aria-label="이동 방향">
-          <button type="button" data-game-key="ArrowUp" aria-label="위로 이동">▲</button>
-          <button type="button" data-game-key="ArrowLeft" aria-label="왼쪽으로 이동">◀</button>
-          <button type="button" data-game-key="ArrowDown" aria-label="아래로 이동">▼</button>
-          <button type="button" data-game-key="ArrowRight" aria-label="오른쪽으로 이동">▶</button>
+          <button type="button" data-touch-direction="up" aria-label="위로 이동" aria-pressed="false">▲</button>
+          <button type="button" data-touch-direction="left" aria-label="왼쪽으로 이동" aria-pressed="false">◀</button>
+          <button type="button" data-touch-direction="down" aria-label="아래로 이동" aria-pressed="false">▼</button>
+          <button type="button" data-touch-direction="right" aria-label="오른쪽으로 이동" aria-pressed="false">▶</button>
         </div>
-        <button class="touch-controls__action" type="button" data-game-key="Space" aria-label="상호작용">ACTION</button>
-        <button class="touch-controls__pause" type="button" data-game-key="Escape" aria-label="일시정지">Ⅱ</button>
+        <button class="touch-controls__action" type="button" data-touch-command="action" aria-label="상호작용" aria-pressed="false">행동</button>
+        <button class="touch-controls__pause" type="button" data-touch-command="pause" aria-label="일시정지" aria-pressed="false">Ⅱ</button>
       </section>
       <p id="status-message" class="sr-only" aria-live="polite"></p>
     </main>

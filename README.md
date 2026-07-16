@@ -1,38 +1,109 @@
-# 냥포차: 달빛 아래 야식당
+# Meow Night Diner
 
-> **Meow Night Diner** — 낮에는 포근하고 밤에는 푸른 네온이 빛나는 30단계 포장마차 경영 게임
+> A cozy pixel-art restaurant management game where a cat owner grows a moonlit street-food stall through 30 increasingly demanding stages.
 
-`냥포차`는 손님의 주문을 받고 음식을 조리·서빙해 번 돈으로 메뉴, 좌석, 직원과 포차 외형을 성장시키는 브라우저 게임입니다. 1단계는 약 30초, 최종 30단계는 약 60분을 목표로 하며 전체 목표 활성 플레이 시간은 381분입니다. 초반은 규칙을 빠르게 익히고, 후반은 다량 주문·VIP·러시와 여러 병목을 동시에 운영하도록 설계했습니다.
+## Play the Game
 
-## 현재 구현 범위
+[Play Meow Night Diner in your browser](https://junn0s.github.io/Meow/)
 
-- 30단계, 총 179개 세부 구매와 5단계 단위 6개 챕터
-- 어묵·떡볶이·붕어빵·야식 라면·달빛 꼬치·달빛 정식의 6메뉴
-- 가격/조리 속도 레벨, 주문 가중치, 선호 메뉴와 1~3개 다량 주문
-- 2석에서 14석까지 확장되는 좌석
-- 서로 다른 주문을 점유하는 셰프 4명과 독립 왕복 서빙을 하는 서버 4명
-- 직원별 모자띠·앞치마·트레이·배지와 주방/서비스 유도등
-- 최근 서비스 기반 평점, 인내심 0 무결제 이탈, 연속 이탈 안전장치
-- 토끼·햄스터·강아지·너구리 성향, VIP와 25~30단계 러시
-- FEVER Lv.1~3, 30초 메뉴 홍보, 콤보·팁·VIP 통합 결제
-- 최대 4시간 오프라인 수익. 다음 구매비의 45% 상한으로 단계 자동 스킵 방지
-- 10분 활성 플레이 기준 낮→노을→밤→새벽 순환
-- 포차 6티어, 야간 네온 순차 점등, 빗물 반사, 새벽 안개
-- 동적 광원 24개·분위기 파티클 60개 고정 풀
-- `prefers-reduced-motion` 및 게임 내 움직임 줄이기 설정
-- 키보드, 마우스와 모바일 화면 방향키/ACTION 버튼
-- `SaveData v3` 저장과 기존 v1/v2 저장 자동 마이그레이션
+The game runs directly in a modern desktop or mobile browser. No installation is required.
 
-## 실행
+## Gameplay
 
-Node.js 20 이상 환경에서 다음 명령을 사용합니다.
+### Sunset
+
+![Meow Night Diner gameplay during sunset](docs/screenshots/gameplay-sunset.png)
+
+Warm sunset colors fill the stall before the blue neon lights take over.
+
+### Night
+
+![Meow Night Diner gameplay at night](docs/screenshots/gameplay-night.png)
+
+At night, neon signs, rain reflections, and cool blue lighting transform the diner.
+
+## About the Game
+
+Serve customers, cook and deliver their orders, then reinvest the earnings in food prices, cooking speed, seats, chefs, servers, fever bonuses, and the diner itself. The early stages teach the core loop quickly, while later stages introduce larger orders, VIP customers, rush periods, and increasingly expensive upgrades.
+
+Key features include:
+
+- 30 progression stages with six visual tiers
+- Six unlockable dishes with separate price and cooking-speed upgrades
+- Expandable seating and automatic chef and server workers
+- Day, sunset, night, and dawn transitions during active play
+- Fever time, menu promotions, customer rushes, combos, tips, and VIP bonuses
+- Local save data and capped offline earnings
+- Keyboard, mouse, and mobile touch controls
+
+## Controls
+
+### Desktop
+
+| Action | Control |
+| --- | --- |
+| Move the owner cat | `WASD` or arrow keys |
+| Take an order, pick up food, or serve | `Space` |
+| Pause or open settings | `Esc` |
+| Toggle sound effects | `M` |
+| Use menus and buy upgrades | Mouse click |
+
+### Mobile
+
+| Action | Control |
+| --- | --- |
+| Move the owner cat | Hold the on-screen directional pad |
+| Take an order, pick up food, or serve | Tap `ACTION` |
+| Pause or open settings | Tap the pause button |
+| Use menus and buy upgrades | Tap the desired button |
+
+Before hiring workers, the owner cat handles orders and serving manually. Each chef manages one cooking task at a time, while each server independently delivers a ready dish to any compatible waiting customer.
+
+## Source Directory
+
+```text
+src/
+├── main.ts                 # Phaser bootstrap and browser control bindings
+├── styles.css              # Responsive page layout and mobile touch UI
+├── debug.d.ts              # Types for the optional browser debug API
+├── vite-env.d.ts           # Vite environment type declarations
+├── game/
+│   ├── art/                # Pixel textures, decor, atmosphere, and presentation
+│   ├── audio/              # Sound effects and day/night ambience
+│   ├── data/               # Menu, customer, progression, upgrade, and visual data
+│   ├── economy/            # Currency formatting and economy calculations
+│   ├── entities/           # Player, customers, tables, and cooking stations
+│   ├── input/              # Pointer and touch input state management
+│   ├── scenes/             # Boot, menu, gameplay, and result scenes
+│   ├── systems/            # Progression, saves, service flow, upgrades, and time
+│   └── types/              # Shared game state and TypeScript contracts
+└── ui/                     # HUD, buttons, toast messages, and upgrade panel
+```
+
+### Main Modules
+
+| Path | Responsibility |
+| --- | --- |
+| `src/game/scenes/GameScene.ts` | Runs the restaurant loop, customers, workers, interactions, rushes, and payments. |
+| `src/game/data/progressionData.ts` | Defines the 30-stage progression curve and worker unlocks. |
+| `src/game/systems/ProgressionSystem.ts` | Applies purchases, menu levels, fever progression, and stage completion rules. |
+| `src/game/systems/ServiceFlowRules.ts` | Controls customer capacity, arrival flow, and valid food recipients. |
+| `src/game/systems/DayNightController.ts` | Advances the active-play clock through day, sunset, night, and dawn. |
+| `src/game/input/TouchControls.ts` | Converts held mobile buttons into continuous movement and actions. |
+| `src/ui/UpgradePanel.ts` | Displays the current progression goal and handles upgrade purchases. |
+
+## Run Locally
+
+Node.js 20 or newer is recommended.
 
 ```bash
 npm install
 npm run dev
 ```
 
-프로덕션 검증:
+Open the local URL printed by Vite in your browser.
+
+## Production Checks
 
 ```bash
 npm run typecheck
@@ -42,82 +113,13 @@ npm run build
 npm run test:release
 ```
 
-## 조작법
+The production client is generated in `dist/client`. GitHub Pages deployment is configured through the repository workflow, and Vite uses a relative base path so assets work under the repository URL.
 
-| 입력 | 기능 |
-| --- | --- |
-| `WASD` 또는 방향키 | 사장 고양이 이동 |
-| `Space` | 주문받기·음식 들기·서빙 |
-| 마우스/터치 | 구매와 메뉴 버튼 |
-| `Esc` | 일시정지·설정 |
-| `M` | 효과음 켜기/끄기 |
-| 모바일 방향 패드·`ACTION` | 이동·상호작용 |
+## Additional Documentation
 
-직원을 고용하기 전에는 사장이 주문과 서빙을 직접 맡습니다. 셰프는 한 명당 하나의 주문·조리 작업을 점유하고, 서버는 한 명당 하나의 완성 음식을 해당 주문자에게 배달합니다.
+- [30-Stage Economy, Balance, and Design Specification](docs/30-stage-economy-balance-design.md)
+- [Game Description](docs/game-description.md)
+- [AI Usage Report](docs/ai-usage-report.md)
+- [Assets and Licenses](docs/asset-licenses.md)
 
-## 30단계 목표시간
-
-| 단계 | 단계당 목표 |
-| --- | ---: |
-| 1~5 | 30초, 50초, 70초, 90초, 2분 |
-| 6~10 | 각 4분 |
-| 11~15 | 각 8분 |
-| 16~20 | 각 12분 |
-| 21~25 | 각 17분 |
-| 26~30 | 20분, 25분, 30분, 35분, 60분 |
-
-고정 seed 1,000개 × 초보/평균/숙련 3개 프로필로 검사합니다. 가격 이분탐색 결과 현재 최대 보정 필요량은 0.65%이며, 평균 프로필의 30단계 P50은 59분 56초입니다.
-
-## 성장과 운영
-
-- 새 메뉴는 6/11/16/21/26단계에서 해금됩니다.
-- 셰프는 4/12/19/27단계, 서버는 7/14/22/28단계에서 최대 4명까지 늘어납니다.
-- FEVER는 9/18/29단계에서 Lv.1~3으로 성장합니다. 성공 결제로 게이지를 채우면 15/18/20초 동안 매출이 `×1.5/×1.65/×1.8`이 됩니다.
-- 메뉴 홍보는 30초 동안 선택 메뉴 주문 가중치 `×2`, 결제 `×1.25`를 적용합니다.
-- 25단계 이후에는 10초 예고 후 러시가 발생합니다. 피버는 청록 `FEVER`, 러시는 자홍 `RUSH` 문구와 조명으로 구분됩니다.
-- 30단계는 달빛 간판 5부품을 차례로 점등합니다. 시설 완성과 최근 서비스 평점 4.5 이상을 모두 달성하면 클리어합니다.
-
-## 저장과 오프라인 수익
-
-돈, 평점, 손님 수, 30단계 진행, 6메뉴 레벨, 직원, 피버, 활성 시간, 시간대, 움직임/소리 설정을 `localStorage`에 저장합니다. 오프라인 시간은 활성 플레이 시간과 낮·밤 시계에 포함되지 않습니다.
-
-오프라인 수익은 셰프와 서버를 모두 보유한 뒤부터 계산합니다. 최대 4시간, 정상 자동 운영 예상 수익의 25%, 다음 구매 가격의 45% 중 가장 낮은 값을 지급합니다. 자동 구매는 하지 않으므로 오프라인만으로 여러 단계를 건너뛰지 않습니다.
-
-## 접근성과 성능
-
-- 일반 UI 글자 대비 4.5:1, 게이지·아이콘 대비 3:1 정적 검사
-- 색뿐 아니라 `FEVER`·`RUSH`·`!`·`!!`·`VIP` 문구와 형태를 함께 사용
-- 모바일 버튼 최소 44×44px
-- 움직임 줄이기에서 비 48→12개, 안개 12→3개, 증기와 반복 반짝임 감소
-- 960×540 실제 버퍼와 480×270 논리 좌표, 한글 텍스트 2배 내부 해상도
-- 광원 24개, 분위기 파티클 60개를 초과하지 않는 고정 풀
-
-## 배포
-
-프로덕션 빌드는 `dist/client`, Sites worker는 `dist/server/index.js`에 생성됩니다. `.openai/hosting.json`의 기존 Sites 프로젝트를 사용하며, GitHub Pages용 워크플로도 유지합니다. Vite의 상대 `base` 설정으로 저장소 하위 경로에서도 에셋을 불러옵니다.
-
-- GitHub Pages: <https://junn0s.github.io/Meow/>
-
-## 검증 현황
-
-2026-07-16 기준 다음 자동 검사를 통과했습니다.
-
-| 검증 | 결과 |
-| --- | --- |
-| TypeScript | 통과 |
-| 경제·진행·피버·오프라인·시계·저장 스모크 테스트 | 통과 |
-| 30단계 × 3프로필 × 1,000 seed 시뮬레이션 | 통과 |
-| 가격 이분탐색·P50/P75/P90 합격선 | 통과 |
-| 프로덕션/Sites 빌드 | 통과 |
-| 접근성·reduced-motion·광원/파티클 상한 정적 감사 | 통과 |
-| GitHub Pages Actions 빌드·배포·HTTPS 응답 | 통과 |
-| 7~10단계 신규 실브라우저 E2E | 실행 환경 사용량 제한으로 보류 |
-
-## 문서
-
-- [30단계 경제·밸런스·디자인 명세](docs/30-stage-economy-balance-design.md)
-- [게임 설명서](docs/game-description.md)
-- [AI 활용 보고서](docs/ai-usage-report.md)
-- [에셋 및 라이선스](docs/asset-licenses.md)
-
-외부 이미지·음원·웹폰트를 사용하지 않습니다. 픽셀 텍스처는 Phaser Graphics로 생성하고, 효과음과 시간대 앰비언스는 Web Audio API로 합성합니다.
+All pixel textures are generated with Phaser Graphics, and the sound effects and ambience are synthesized with the Web Audio API. The project does not depend on external image, music, or web-font assets.

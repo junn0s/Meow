@@ -1,11 +1,12 @@
 import Phaser from "phaser";
 import type { MenuItemId } from "../types/game";
+import { touchInput } from "../input/TouchControls";
 
 export type PlayerFacing = "down" | "up" | "left" | "right";
 
 export class Player extends Phaser.Physics.Arcade.Sprite {
-  private readonly cursors: Phaser.Types.Input.Keyboard.CursorKeys;
-  private readonly wasd: Record<"up" | "down" | "left" | "right", Phaser.Input.Keyboard.Key>;
+  private readonly cursors?: Phaser.Types.Input.Keyboard.CursorKeys;
+  private readonly wasd?: Record<"up" | "down" | "left" | "right", Phaser.Input.Keyboard.Key>;
   private facing: PlayerFacing = "down";
   private animationClock = 0;
   private animationFrame = 0;
@@ -26,17 +27,15 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.setOffset(9, 18);
 
     const keyboard = scene.input.keyboard;
-    if (keyboard === null) {
-      throw new Error("Keyboard input is required for the player.");
+    if (keyboard !== null) {
+      this.cursors = keyboard.createCursorKeys();
+      this.wasd = keyboard.addKeys({
+        up: Phaser.Input.Keyboard.KeyCodes.W,
+        down: Phaser.Input.Keyboard.KeyCodes.S,
+        left: Phaser.Input.Keyboard.KeyCodes.A,
+        right: Phaser.Input.Keyboard.KeyCodes.D,
+      }) as Record<"up" | "down" | "left" | "right", Phaser.Input.Keyboard.Key>;
     }
-
-    this.cursors = keyboard.createCursorKeys();
-    this.wasd = keyboard.addKeys({
-      up: Phaser.Input.Keyboard.KeyCodes.W,
-      down: Phaser.Input.Keyboard.KeyCodes.S,
-      left: Phaser.Input.Keyboard.KeyCodes.A,
-      right: Phaser.Input.Keyboard.KeyCodes.D,
-    }) as Record<"up" | "down" | "left" | "right", Phaser.Input.Keyboard.Key>;
   }
 
   public override update(deltaMs: number): void {
@@ -46,10 +45,18 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       return;
     }
 
-    const left = this.cursors.left.isDown || this.wasd.left.isDown;
-    const right = this.cursors.right.isDown || this.wasd.right.isDown;
-    const up = this.cursors.up.isDown || this.wasd.up.isDown;
-    const down = this.cursors.down.isDown || this.wasd.down.isDown;
+    const left = this.cursors?.left.isDown === true
+      || this.wasd?.left.isDown === true
+      || touchInput.isDirectionDown("left");
+    const right = this.cursors?.right.isDown === true
+      || this.wasd?.right.isDown === true
+      || touchInput.isDirectionDown("right");
+    const up = this.cursors?.up.isDown === true
+      || this.wasd?.up.isDown === true
+      || touchInput.isDirectionDown("up");
+    const down = this.cursors?.down.isDown === true
+      || this.wasd?.down.isDown === true
+      || touchInput.isDirectionDown("down");
     const direction = new Phaser.Math.Vector2(
       Number(right) - Number(left),
       Number(down) - Number(up),
