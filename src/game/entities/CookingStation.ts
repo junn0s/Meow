@@ -6,6 +6,7 @@ export interface CookingTicket {
   readonly customerId: string;
   readonly menuItemId: MenuItemId;
   readonly quantity: number;
+  readonly chefWorkerId?: string;
 }
 
 export type FoodReadyCallback = (station: CookingStation, ticket: CookingTicket) => void;
@@ -30,6 +31,8 @@ export class CookingStation {
   private unlocked = false;
   private speedMultiplier = 1;
   private onFoodReady?: FoodReadyCallback;
+  private cookingTimeResolver?: (quantity: number) => number;
+  private canStartNextResolver?: () => boolean;
 
   public constructor(scene: Phaser.Scene, menuItemId: MenuItemId, x: number, y: number) {
     this.scene = scene;
@@ -94,6 +97,22 @@ export class CookingStation {
     this.onFoodReady = callback;
   }
 
+  public setCookingTimeResolver(resolver: (quantity: number) => number): void {
+    this.cookingTimeResolver = resolver;
+  }
+
+  public setCanStartNextResolver(resolver: () => boolean): void {
+    this.canStartNextResolver = resolver;
+  }
+
+  public setProgressStats(priceLabel: string, priceLevel: number, speedLevel: number): void {
+    const item = getMenuItem(this.menuItemId);
+    this.label
+      .setText(`${item.name} ${priceLabel}\nP${priceLevel} · S${speedLevel}`)
+      .setFontSize(6)
+      .setAlign("center");
+  }
+
   public enqueue(ticket: CookingTicket): void {
     if (!this.unlocked) {
       return;
@@ -155,12 +174,46 @@ export class CookingStation {
     return this.queue.length + Number(this.activeTicket !== undefined);
   }
 
+  public cancelTicketsForCustomer(customerId: string): CookingTicket[] {
+    const cancelled: CookingTicket[] = [];
+    for (let index = this.queue.length - 1; index >= 0; index -= 1) {
+      if (this.queue[index]?.customerId === customerId) {
+        const [ticket] = this.queue.splice(index, 1);
+        if (ticket !== undefined) cancelled.push(ticket);
+      }
+    }
+    for (let index = this.readyTickets.length - 1; index >= 0; index -= 1) {
+      if (this.readyTickets[index]?.customerId === customerId) {
+        const [ticket] = this.readyTickets.splice(index, 1);
+        if (ticket !== undefined) cancelled.push(ticket);
+      }
+    }
+    if (this.activeTicket?.customerId === customerId) {
+      cancelled.push(this.activeTicket);
+      this.activeTicket = undefined;
+      this.elapsedMs = 0;
+      this.progressBackground.setVisible(false);
+      this.progressFill.setVisible(false);
+      this.startNextIfIdle();
+    }
+    this.readyIcon.setVisible(this.readyTickets.length > 0);
+    return cancelled;
+  }
+
+  public getActiveTicket(): CookingTicket | undefined {
+    return this.activeTicket;
+  }
+
   public distanceTo(x: number, y: number): number {
     return Phaser.Math.Distance.Between(this.x, this.y, x, y);
   }
 
   private startNextIfIdle(): void {
-    if (this.activeTicket !== undefined || this.queue.length === 0) {
+    if (
+      this.activeTicket !== undefined
+      || this.queue.length === 0
+      || this.canStartNextResolver?.() === false
+    ) {
       return;
     }
 
@@ -169,7 +222,8 @@ export class CookingStation {
       return;
     }
     this.elapsedMs = 0;
-    this.durationMs = getMenuItem(this.activeTicket.menuItemId).cookingTimeMs * this.speedMultiplier;
+    this.durationMs = this.cookingTimeResolver?.(this.activeTicket.quantity)
+      ?? getMenuItem(this.activeTicket.menuItemId).cookingTimeMs * this.speedMultiplier;
     this.progressFill.width = 0;
     this.progressBackground.setVisible(true);
     this.progressFill.setVisible(true);

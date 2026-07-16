@@ -2,6 +2,9 @@ export const MENU_ITEM_IDS = [
   "fishcake",
   "tteokbokki",
   "fish-bread",
+  "ramen",
+  "moon-skewer",
+  "moonlight-set",
 ] as const;
 
 export type MenuItemId = (typeof MENU_ITEM_IDS)[number];
@@ -58,6 +61,148 @@ export interface MenuItem {
 
 export type WorkerRole = "chef" | "server";
 
+export const GROWTH_STAGES = [
+  1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
+  11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+  21, 22, 23, 24, 25, 26, 27, 28, 29, 30,
+] as const;
+
+export type GrowthStage = (typeof GROWTH_STAGES)[number];
+export type VisualPhase = "day" | "sunset" | "night" | "dawn";
+export type VisualTier = 1 | 2 | 3 | 4 | 5 | 6;
+
+export interface StageConfig {
+  readonly stage: GrowthStage;
+  readonly targetDurationSeconds: number;
+  readonly keyUpgrade: string;
+  readonly startRevenuePerSecond: number;
+  readonly exitRevenuePerSecond: number;
+  readonly totalBudget: number;
+  readonly purchaseCosts: readonly number[];
+  readonly baseSpawnIntervalMs: number;
+  readonly basePatienceMs: number;
+  readonly seatCount: number;
+  readonly chefCount: number;
+  readonly serverCount: number;
+  readonly targetUtilization: readonly [number, number];
+  readonly targetSuccessRate: readonly [number, number];
+  readonly visualTier: VisualTier;
+}
+
+export interface EconomyConfig {
+  readonly worktopCostGrowth: number;
+  readonly worktopPriceGrowth: number;
+  readonly worktopMaxLevel: number;
+  readonly priceMilestoneLevels: readonly number[];
+  readonly priceMilestoneMultiplier: number;
+  readonly cookingSpeedPerLevel: number;
+  readonly minimumCookingTimeRatio: number;
+  readonly extraItemCookingTimeRatio: number;
+}
+
+export interface MenuProgress {
+  readonly menuItemId: MenuItemId;
+  readonly unlocked: boolean;
+  readonly priceLevel: number;
+  readonly speedLevel: number;
+  readonly specialMultiplier: number;
+}
+
+export interface WorkerProgress {
+  readonly chefCount: number;
+  readonly serverCount: number;
+  readonly chefSpeedLevel: number;
+  readonly serverSpeedLevel: number;
+}
+
+export interface FeverState {
+  readonly level: 0 | 1 | 2 | 3;
+  readonly gauge: number;
+  readonly activeRemainingMs: number;
+  readonly cooldownRemainingMs: number;
+}
+
+export interface ProgressionState {
+  readonly currentStage: GrowthStage;
+  readonly purchasedStepCount: number;
+  readonly menuProgress: readonly MenuProgress[];
+  readonly workerProgress: WorkerProgress;
+  readonly feverState: FeverState;
+  readonly finaleRevenueMultiplier: number;
+}
+
+export type ProgressionPurchaseEffect =
+  | "menu_price"
+  | "menu_speed"
+  | "service_flow"
+  | "decor"
+  | "stage_key"
+  | "finale_part";
+
+export interface ProgressionPurchaseData {
+  readonly stage: GrowthStage;
+  readonly step: number;
+  readonly stepCount: number;
+  readonly name: string;
+  readonly description: string;
+  readonly cost: number;
+  readonly effect: ProgressionPurchaseEffect;
+  readonly targetMenuItemId?: MenuItemId;
+}
+
+export interface ProgressionPurchaseView {
+  readonly purchase: ProgressionPurchaseData;
+  readonly canAfford: boolean;
+  readonly canPurchase: boolean;
+  readonly chapter: VisualTier;
+  readonly overallProgress: number;
+}
+
+export interface ProgressionEffects {
+  readonly unlockedMenuIds: readonly MenuItemId[];
+  readonly seatCount: number;
+  readonly cookingTimeMultiplier: number;
+  readonly customerSpawnIntervalMultiplier: number;
+  readonly chefCount: number;
+  readonly serverCount: number;
+  readonly chefHired: boolean;
+  readonly serverHired: boolean;
+  readonly feverLevel: 0 | 1 | 2 | 3;
+  readonly vipUnlocked: boolean;
+  readonly rushUnlocked: boolean;
+  readonly finalFacilityPurchased: boolean;
+}
+
+export interface ProgressionPurchaseSuccess {
+  readonly success: true;
+  readonly purchase: ProgressionPurchaseData;
+  readonly state: ProgressionState;
+  readonly effects: ProgressionEffects;
+  readonly remainingMoney: number;
+  readonly stageCompleted: boolean;
+}
+
+export interface ProgressionPurchaseFailure {
+  readonly success: false;
+  readonly reason: "complete" | "insufficient_funds";
+  readonly state: ProgressionState;
+  readonly effects: ProgressionEffects;
+  readonly remainingMoney: number;
+}
+
+export type ProgressionPurchaseResult =
+  | ProgressionPurchaseSuccess
+  | ProgressionPurchaseFailure;
+
+export interface WorldVisualState {
+  readonly worldClockMs: number;
+  readonly phase: VisualPhase;
+  readonly nextPhase: VisualPhase;
+  readonly phaseProgress: number;
+  readonly phaseRemainingMs: number;
+  readonly visualTier: VisualTier;
+}
+
 export type UpgradeEffectType =
   | "unlock_menu"
   | "add_seat"
@@ -99,6 +244,7 @@ export interface EconomyState {
 }
 
 export interface SaleResult {
+  readonly subtotal: number;
   readonly baseAmount: number;
   readonly tipAmount: number;
   readonly totalAmount: number;
@@ -165,6 +311,7 @@ export interface GameSettings {
   readonly musicVolume: number;
   readonly sfxVolume: number;
   readonly muted: boolean;
+  readonly reducedMotion: boolean;
 }
 
 export interface SaveData {
@@ -180,6 +327,10 @@ export interface SaveData {
   readonly playStartedAt: number;
   /** Active in-game time only; menus and offline time are excluded. */
   readonly elapsedMs: number;
+  /** Active-play day/night clock. Pauses and offline time never advance it. */
+  readonly worldClockMs: number;
+  readonly visualTier: VisualTier;
+  readonly progression: ProgressionState;
   readonly cleared: boolean;
   readonly lastSavedAt: number;
 }
@@ -194,6 +345,9 @@ export interface SaveDataInput {
   readonly tutorialCompleted?: boolean;
   readonly playStartedAt?: number;
   readonly elapsedMs?: number;
+  readonly worldClockMs?: number;
+  readonly visualTier?: VisualTier;
+  readonly progression?: ProgressionState;
   readonly cleared?: boolean;
 }
 

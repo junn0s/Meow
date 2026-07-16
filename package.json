@@ -8,6 +8,9 @@
     "dev": "vite",
     "build": "node scripts/clean-dist.mjs && tsc --noEmit && vite build && node scripts/prepare-sites-build.mjs",
     "typecheck": "tsc --noEmit",
+    "test:foundation": "node scripts/run-foundation-tests.mjs",
+    "simulate:balance": "node scripts/balance-simulator.mjs",
+    "test:release": "node scripts/release-audit.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

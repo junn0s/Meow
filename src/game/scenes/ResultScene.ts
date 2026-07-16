@@ -19,9 +19,11 @@ export class ResultScene extends Phaser.Scene {
 
   public create(data: ResultSceneData): void {
     configureHighDefinitionScene(this);
-    createMenuBackdrop(this);
-    this.add.rectangle(240, 135, 480, 270, 0x0a0d1d, 0.66).setDepth(15);
     const save = new SaveSystem().load();
+    const reducedMotion = save?.settings.reducedMotion
+      || window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
+    createMenuBackdrop(this, reducedMotion);
+    this.add.rectangle(240, 135, 480, 270, 0x0a0d1d, 0.66).setDepth(15);
     const sound = new SoundManager(save?.muted ?? false);
     void sound.unlock();
     sound.clear();
@@ -80,7 +82,7 @@ export class ResultScene extends Phaser.Scene {
       this.scene.start("MenuScene");
     }, { width: 100, height: 22, primary: false, fontSize: 8 }).setDepth(40);
 
-    for (let index = 0; index < 28; index += 1) {
+    for (let index = 0; index < (reducedMotion ? 8 : 28); index += 1) {
       const sparkle = this.add
         .image(Phaser.Math.Between(40, 440), Phaser.Math.Between(24, 195), "sparkle")
         .setDepth(25)
@@ -93,7 +95,7 @@ export class ResultScene extends Phaser.Scene {
         duration: Phaser.Math.Between(500, 900),
         delay: index * 65,
         yoyo: true,
-        repeat: -1,
+        repeat: reducedMotion ? 0 : -1,
       });
     }
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => sound.dispose());

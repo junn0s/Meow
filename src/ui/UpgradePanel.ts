@@ -1,5 +1,9 @@
 import Phaser from "phaser";
-import type { UpgradeViewState } from "../game/types/game";
+import { formatCurrency } from "../game/economy/economyMath";
+import type {
+  ProgressionPurchaseView,
+  ProgressionState,
+} from "../game/types/game";
 
 export type UpgradePurchaseHandler = () => void;
 
@@ -13,7 +17,8 @@ export class UpgradePanel {
   private readonly button: Phaser.GameObjects.Rectangle;
   private readonly buttonText: Phaser.GameObjects.Text;
   private readonly badgeText: Phaser.GameObjects.Text;
-  private currentView?: UpgradeViewState;
+  private readonly levelText: Phaser.GameObjects.Text;
+  private currentView?: ProgressionPurchaseView;
   private handler?: UpgradePurchaseHandler;
 
   public constructor(scene: Phaser.Scene) {
@@ -22,14 +27,14 @@ export class UpgradePanel {
     scene.add.rectangle(415, 135, 130, 270, 0x12172c, 0.99).setDepth(depth);
     scene.add.rectangle(351, 135, 2, 270, 0xd47a43, 0.9).setDepth(depth + 1);
     scene.add
-      .text(363, 9, "오늘의 확장", {
+      .text(363, 9, "30단계 달빛 여정", {
         fontFamily: '"Jua", "Gowun Dodum", sans-serif',
         fontSize: "11px",
         color: "#ffe0a1",
       })
       .setDepth(depth + 2);
     scene.add
-      .text(363, 25, "작은 포차를 키워보세요", {
+      .text(363, 25, "한 단계씩 포차를 키워요", {
         fontFamily: '"Gowun Dodum", sans-serif',
         fontSize: "7px",
         color: "#8f9abc",
@@ -38,7 +43,7 @@ export class UpgradePanel {
 
     scene.add.rectangle(415, 57, 106, 1, 0x424c70, 0.7).setDepth(depth + 1);
     this.badgeText = scene.add
-      .text(363, 45, "다음 시설", {
+      .text(363, 45, "1장 · 1단계", {
         fontFamily: '"Gowun Dodum", sans-serif',
         fontSize: "7px",
         color: "#f0ac67",
@@ -109,15 +114,15 @@ export class UpgradePanel {
       .setOrigin(0, 0.5)
       .setDepth(depth + 2);
     this.progressText = scene.add
-      .text(415, 234, "1 / 10", {
+      .text(415, 234, "1단계 · 0/6", {
         fontFamily: "monospace",
         fontSize: "8px",
         color: "#d1d7ed",
       })
       .setOrigin(0.5, 0)
       .setDepth(depth + 2);
-    scene.add
-      .text(415, 257, "클릭해서 시설 구매", {
+    this.levelText = scene.add
+      .text(415, 257, "가격 Lv.1 · 속도 Lv.0", {
         fontFamily: '"Gowun Dodum", sans-serif',
         fontSize: "7px",
         color: "#697494",
@@ -130,28 +135,40 @@ export class UpgradePanel {
     this.handler = handler;
   }
 
-  public setUpgrade(view: UpgradeViewState | undefined, purchasedCount: number): void {
+  public setProgression(
+    view: ProgressionPurchaseView | undefined,
+    state: ProgressionState,
+  ): void {
     this.currentView = view;
-    const progress = Phaser.Math.Clamp(purchasedCount / 10, 0, 1);
+    const progress = Phaser.Math.Clamp(view?.overallProgress ?? 1, 0, 1);
     this.progressFill.width = 102 * progress;
-    this.progressText.setText(`${purchasedCount} / 10`);
+    const activeMenu = [...state.menuProgress].reverse().find((menu) => menu.unlocked)
+      ?? state.menuProgress[0];
+    this.levelText.setText(
+      `가격 Lv.${activeMenu?.priceLevel ?? 1} · 속도 Lv.${activeMenu?.speedLevel ?? 0}`,
+    );
 
     if (view === undefined) {
-      this.badgeText.setText("모든 시설 완성");
+      this.badgeText.setText("30단계 완성");
       this.nameText.setText("달빛 야식당");
       this.descriptionText.setText("동네에서 가장 따뜻한 야식당이 되었어요!");
       this.costText.setText("완성!").setColor("#ffe58a");
       this.button.disableInteractive().setFillStyle(0x39415d).setAlpha(0.7);
       this.buttonText.setText("완료").setColor("#aab4cf");
+      this.progressText.setText("30단계 · 5/5");
       return;
     }
 
-    this.badgeText.setText(`시설 ${view.upgrade.order}단계`);
-    this.nameText.setText(view.upgrade.name);
-    this.descriptionText.setText(view.upgrade.description);
+    const purchase = view.purchase;
+    this.badgeText.setText(`${view.chapter}장 · ${purchase.stage}단계`);
+    this.nameText.setText(purchase.name);
+    this.descriptionText.setText(purchase.description);
     this.costText
-      .setText(`${view.upgrade.cost.toLocaleString("ko-KR")}냥`)
+      .setText(formatCurrency(purchase.cost))
       .setColor(view.canAfford ? "#ffd16d" : "#a27672");
+    this.progressText.setText(
+      `${purchase.stage}단계 · ${purchase.step - 1}/${purchase.stepCount}`,
+    );
     this.refreshButton();
   }
 

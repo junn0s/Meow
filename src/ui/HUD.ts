@@ -1,6 +1,8 @@
 import Phaser from "phaser";
 import type { MenuItemId } from "../game/types/game";
+import type { WorldVisualState } from "../game/types/game";
 import { getMenuItem } from "../game/data/menuData";
+import { formatCurrency } from "../game/economy/economyMath";
 
 export class HUD {
   private readonly scene: Phaser.Scene;
@@ -9,6 +11,12 @@ export class HUD {
   private readonly customerText: Phaser.GameObjects.Text;
   private readonly heldText: Phaser.GameObjects.Text;
   private readonly clockText: Phaser.GameObjects.Text;
+  private readonly phaseText: Phaser.GameObjects.Text;
+  private readonly phaseBar: Phaser.GameObjects.Rectangle;
+  private readonly eventText: Phaser.GameObjects.Text;
+  private readonly feverText: Phaser.GameObjects.Text;
+  private readonly feverFill: Phaser.GameObjects.Rectangle;
+  private readonly promotionText: Phaser.GameObjects.Text;
   private displayedMoney = 0;
   private targetMoney = 0;
 
@@ -17,15 +25,23 @@ export class HUD {
     scene.add.rectangle(175, 17, 350, 34, 0x11162c, 0.97).setDepth(900);
     scene.add.rectangle(175, 34, 350, 2, 0xd77c43, 0.85).setDepth(901);
     scene.add
-      .text(9, 7, "☾ 냥포차", {
+      .text(9, 7, "냥포차", {
         fontFamily: '"Jua", "Gowun Dodum", sans-serif',
         fontSize: "11px",
         color: "#ffe4a3",
       })
       .setDepth(902);
 
+    this.phaseText = scene.add
+      .text(54, 7, "☀ 낮", {
+        fontFamily: '"Gowun Dodum", sans-serif',
+        fontSize: "8px",
+        color: "#d9f5ff",
+      })
+      .setDepth(902);
+
     this.moneyText = scene.add
-      .text(89, 6, "0냥", {
+      .text(101, 6, "0냥", {
         fontFamily: '"Jua", "Gowun Dodum", sans-serif',
         fontSize: "11px",
         color: "#ffd46a",
@@ -60,6 +76,42 @@ export class HUD {
       })
       .setOrigin(1, 0)
       .setDepth(902);
+    scene.add.rectangle(312, 25, 48, 3, 0x34405f, 0.9).setDepth(902);
+    this.phaseBar = scene.add
+      .rectangle(288, 25, 48, 3, 0x72aebe, 1)
+      .setOrigin(0, 0.5)
+      .setDepth(903);
+    this.eventText = scene.add
+      .text(238, 7, "", {
+        fontFamily: '"Jua", sans-serif',
+        fontSize: "8px",
+        color: "#ffe6ed",
+        backgroundColor: "#8e2948",
+        padding: { x: 3, y: 1 },
+      })
+      .setOrigin(0.5, 0)
+      .setDepth(904)
+      .setVisible(false);
+    this.feverText = scene.add
+      .text(203, 28, "FEVER 잠김", {
+        fontFamily: "monospace",
+        fontSize: "5px",
+        color: "#8090af",
+      })
+      .setDepth(904);
+    scene.add.rectangle(270, 31, 50, 3, 0x2e3855, 1).setDepth(903);
+    this.feverFill = scene.add
+      .rectangle(245, 31, 0, 3, 0x45ffd2, 1)
+      .setOrigin(0, 0.5)
+      .setDepth(904);
+    this.promotionText = scene.add
+      .text(337, 21, "", {
+        fontFamily: '"Gowun Dodum", sans-serif',
+        fontSize: "6px",
+        color: "#ffe59c",
+      })
+      .setOrigin(1, 0)
+      .setDepth(904);
   }
 
   public update(deltaMs: number): void {
@@ -71,14 +123,14 @@ export class HUD {
     const step = Math.sign(distance) * Math.max(1, Math.abs(distance) * deltaMs * 0.012);
     this.displayedMoney =
       Math.abs(step) >= Math.abs(distance) ? this.targetMoney : this.displayedMoney + step;
-    this.moneyText.setText(`${Math.round(this.displayedMoney).toLocaleString("ko-KR")}냥`);
+    this.moneyText.setText(formatCurrency(Math.round(this.displayedMoney)));
   }
 
   public setMoney(money: number, animate = true): void {
     this.targetMoney = Math.max(0, Math.round(money));
     if (!animate) {
       this.displayedMoney = this.targetMoney;
-      this.moneyText.setText(`${this.targetMoney.toLocaleString("ko-KR")}냥`);
+      this.moneyText.setText(formatCurrency(this.targetMoney));
     }
   }
 
@@ -106,6 +158,50 @@ export class HUD {
     const minutes = Math.floor(totalSeconds / 60);
     const seconds = totalSeconds % 60;
     this.clockText.setText(`${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`);
+  }
+
+  public setWorldTime(state: WorldVisualState): void {
+    const presentation = {
+      day: { icon: "☀", label: "낮", color: "#d9f5ff", bar: 0x72aebe },
+      sunset: { icon: "◒", label: "노을", color: "#ffd0a6", bar: 0xd77a68 },
+      night: { icon: "☾", label: "밤", color: "#aeeaff", bar: 0x38d7ff },
+      dawn: { icon: "◐", label: "새벽", color: "#e6c6de", bar: 0x9b70c8 },
+    } as const;
+    const phase = presentation[state.phase];
+    this.phaseText.setText(`${phase.icon} ${phase.label}`).setColor(phase.color);
+    this.phaseBar
+      .setFillStyle(phase.bar, 1)
+      .setDisplaySize(48 * Math.min(1, Math.max(0, state.phaseProgress)), 3);
+  }
+
+  public setServiceEvent(label?: string, warning = false): void {
+    if (label === undefined || label.length === 0) {
+      this.eventText.setVisible(false);
+      return;
+    }
+    this.eventText
+      .setText(label)
+      .setBackgroundColor(warning ? "#8e2948" : "#176b7a")
+      .setVisible(true);
+  }
+
+  public setFever(level: number, gauge: number, activeRemainingMs: number): void {
+    if (level <= 0) {
+      this.feverText.setText("FEVER 잠김").setColor("#8090af");
+      this.feverFill.setDisplaySize(0, 3);
+      return;
+    }
+    const active = activeRemainingMs > 0;
+    this.feverText
+      .setText(active ? `FEVER Lv.${level} ${Math.ceil(activeRemainingMs / 1_000)}s` : `FEVER Lv.${level}`)
+      .setColor(active ? "#9ffff0" : "#b5c7d8");
+    this.feverFill
+      .setFillStyle(active ? 0x45ffd2 : 0x39bfa8, 1)
+      .setDisplaySize(50 * (active ? 1 : Math.min(1, Math.max(0, gauge / 100))), 3);
+  }
+
+  public setPromotion(label?: string): void {
+    this.promotionText.setText(label === undefined ? "" : `홍보 ${label}`);
   }
 
   public flashMoney(gain: boolean): void {

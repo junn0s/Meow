@@ -64,6 +64,9 @@ export class SoundManager {
   private masterGain: GainNode | null = null;
   private muted: boolean;
   private disposed = false;
+  private ambienceOscillator: OscillatorNode | null = null;
+  private ambienceGain: GainNode | null = null;
+  private ambiencePhase?: VisualPhase;
 
   public constructor(initialMuted = false) {
     this.muted = initialMuted;
@@ -159,12 +162,51 @@ export class SoundManager {
     this.play("click");
   }
 
+  /** A very quiet procedural room tone that crossfades with the four visual phases. */
+  public setAmbience(phase: VisualPhase, reducedMotion = false): void {
+    this.ambiencePhase = phase;
+    const context = this.getOrCreateContext();
+    const destination = this.masterGain;
+    if (context === null || destination === null) return;
+    if (this.ambienceOscillator === null || this.ambienceGain === null) {
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+      oscillator.type = "sine";
+      gain.gain.value = 0.0001;
+      oscillator.connect(gain);
+      gain.connect(destination);
+      oscillator.start();
+      this.ambienceOscillator = oscillator;
+      this.ambienceGain = gain;
+    }
+    const frequencies: Record<VisualPhase, number> = {
+      day: 196,
+      sunset: 164.81,
+      night: 110,
+      dawn: 146.83,
+    };
+    const now = context.currentTime;
+    this.ambienceOscillator.frequency.cancelScheduledValues(now);
+    this.ambienceOscillator.frequency.setTargetAtTime(frequencies[phase], now, reducedMotion ? 0.04 : 0.35);
+    this.ambienceGain.gain.cancelScheduledValues(now);
+    this.ambienceGain.gain.setTargetAtTime(this.muted ? 0.0001 : 0.012, now, reducedMotion ? 0.03 : 0.25);
+  }
+
   public dispose(): void {
     if (this.disposed) {
       return;
     }
 
     this.disposed = true;
+    try {
+      this.ambienceOscillator?.stop();
+    } catch {
+      // The oscillator may already have been stopped by the browser.
+    }
+    this.ambienceOscillator?.disconnect();
+    this.ambienceGain?.disconnect();
+    this.ambienceOscillator = null;
+    this.ambienceGain = null;
     const context = this.context;
     this.context = null;
     this.masterGain = null;
@@ -195,6 +237,9 @@ export class SoundManager {
       masterGain.connect(context.destination);
       this.context = context;
       this.masterGain = masterGain;
+      if (this.ambiencePhase !== undefined) {
+        queueMicrotask(() => this.setAmbience(this.ambiencePhase ?? "night"));
+      }
       return context;
     } catch {
       return null;
@@ -231,3 +276,4 @@ export class SoundManager {
 }
 
 export default SoundManager;
+import type { VisualPhase } from "../types/game";

@@ -11,6 +11,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private animationFrame = 0;
   private frozen = false;
   private carriedFood?: MenuItemId;
+  private carriedCustomerId?: string;
   private carriedSprite?: Phaser.GameObjects.Image;
 
   public constructor(scene: Phaser.Scene, x: number, y: number) {
@@ -83,8 +84,13 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     return this.carriedFood;
   }
 
-  public setCarriedFood(menuItemId: MenuItemId): void {
+  public getCarriedCustomerId(): string | undefined {
+    return this.carriedCustomerId;
+  }
+
+  public setCarriedFood(menuItemId: MenuItemId, customerId: string): void {
     this.carriedFood = menuItemId;
+    this.carriedCustomerId = customerId;
     this.carriedSprite?.destroy();
     this.carriedSprite = this.scene.add
       .image(this.x, this.y - 22, `food-${menuItemId}`)
@@ -95,6 +101,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   public clearCarriedFood(): MenuItemId | undefined {
     const previous = this.carriedFood;
     this.carriedFood = undefined;
+    this.carriedCustomerId = undefined;
     this.carriedSprite?.destroy();
     this.carriedSprite = undefined;
     return previous;

@@ -1,26 +1,42 @@
+import { DEFAULT_PURCHASED_UPGRADE_IDS, UPGRADES } from "../data/upgradeData";
 import {
-  DEFAULT_PURCHASED_UPGRADE_IDS,
-  UPGRADES,
-} from "../data/upgradeData";
+  createDefaultProgressionState,
+  getStageConfig,
+  stageToVisualTier,
+} from "../data/progressionData";
+import { WORLD_CYCLE_MS } from "../data/visualData";
 import {
+  isMenuItemId,
   isUpgradeId,
+  type FeverState,
   type GameSettings,
+  type GrowthStage,
+  type MenuProgress,
+  type ProgressionState,
   type SaveData,
   type SaveDataInput,
   type StorageLike,
   type UpgradeData,
   type UpgradeId,
+  type VisualTier,
+  type WorkerProgress,
 } from "../types/game";
 import { INITIAL_MONEY, INITIAL_RATING, MAX_RATING } from "./EconomySystem";
 
-export const SAVE_DATA_VERSION = 2;
-export const DEFAULT_SAVE_KEY = "meow-night-diner.save.v2";
+export const SAVE_DATA_VERSION = 3;
+export const DEFAULT_SAVE_KEY = "meow-night-diner.save.v3";
+export const LEGACY_SAVE_KEYS = [
+  "meow-night-diner.save.v2",
+  "meow-night-diner.save.v1",
+  "meow-night-diner.save",
+] as const;
 
 export const DEFAULT_GAME_SETTINGS: GameSettings = {
   masterVolume: 1,
   musicVolume: 0.55,
   sfxVolume: 0.8,
   muted: false,
+  reducedMotion: false,
 };
 
 export interface SaveSystemOptions {
@@ -55,13 +71,18 @@ export class SaveSystem {
 
   /** Returns null when no valid save exists; it never throws. */
   public load(): SaveData | null {
-    const serialized = this.readSerialized();
+    const currentSerialized = this.readSerialized();
+    const serialized = currentSerialized ?? this.readLegacySerialized();
     if (serialized === null) {
       return null;
     }
 
     try {
-      return normalizeUnknownSave(JSON.parse(serialized), this.getNow());
+      const normalized = normalizeUnknownSave(JSON.parse(serialized), this.getNow());
+      if (normalized === null) {
+        return null;
+      }
+      return currentSerialized === null ? this.save(normalized) : normalized;
     } catch {
       return null;
     }
@@ -87,6 +108,9 @@ export class SaveSystem {
         overrides.tutorialCompleted ?? base.tutorialCompleted,
       playStartedAt: overrides.playStartedAt ?? now,
       elapsedMs: overrides.elapsedMs ?? 0,
+      worldClockMs: overrides.worldClockMs ?? 0,
+      progression: overrides.progression ?? base.progression,
+      visualTier: overrides.visualTier ?? base.visualTier,
       cleared: overrides.cleared ?? false,
     });
   }
@@ -105,6 +129,10 @@ export class SaveSystem {
     );
     const rating = normalizeNumber(data.rating, INITIAL_RATING, 0, MAX_RATING);
     const muted = normalizeBoolean(data.muted, settings.muted);
+    const progression = normalizeProgressionState(
+      data.progression,
+      purchasedUpgradeIds,
+    );
     const saved: SaveData = {
       version: SAVE_DATA_VERSION,
       money: normalizeInteger(data.money, INITIAL_MONEY, 0),
@@ -116,6 +144,12 @@ export class SaveSystem {
       tutorialCompleted: normalizeBoolean(data.tutorialCompleted, false),
       playStartedAt: normalizeTimestamp(data.playStartedAt, now),
       elapsedMs: normalizeInteger(data.elapsedMs, 0, 0),
+      worldClockMs: normalizeWorldClock(data.worldClockMs, 0),
+      visualTier: normalizeVisualTier(
+        data.visualTier,
+        stageToVisualTier(progression.currentStage),
+      ),
+      progression,
       cleared:
         normalizeBoolean(data.cleared, false) ||
         (purchasedUpgradeIds.includes("moonlight-sign") &&
@@ -130,6 +164,7 @@ export class SaveSystem {
   /** Removes persisted data and returns, but does not persist, a clean state. */
   public reset(): SaveData {
     this.removeSerialized();
+    this.removeLegacySerialized();
     return createDefaultSaveData(this.getNow());
   }
 
@@ -186,6 +221,32 @@ export class SaveSystem {
     return fallback;
   }
 
+  private readLegacySerialized(): string | null {
+    if (this.storageKey !== DEFAULT_SAVE_KEY) {
+      return null;
+    }
+    let newest: string | null = null;
+    for (const key of LEGACY_SAVE_KEYS) {
+      newest = chooseNewestOptionalSerialized(newest, this.readSerializedByKey(key));
+    }
+    return newest;
+  }
+
+  private readSerializedByKey(key: string): string | null {
+    const fallback = this.fallbackStorage.getItem(key);
+    if (this.primaryStorage !== null) {
+      try {
+        const stored = this.primaryStorage.getItem(key);
+        if (stored !== null) {
+          return chooseNewestSerialized(stored, fallback);
+        }
+      } catch {
+        // Continue with the fallback below.
+      }
+    }
+    return fallback;
+  }
+
   private writeSerialized(serialized: string): void {
     this.fallbackStorage.setItem(this.storageKey, serialized);
 
@@ -209,10 +270,27 @@ export class SaveSystem {
       }
     }
   }
+
+  private removeLegacySerialized(): void {
+    if (this.storageKey !== DEFAULT_SAVE_KEY) {
+      return;
+    }
+    for (const key of LEGACY_SAVE_KEYS) {
+      this.fallbackStorage.removeItem(key);
+      if (this.primaryStorage !== null) {
+        try {
+          this.primaryStorage.removeItem(key);
+        } catch {
+          // Storage denial is intentionally non-fatal.
+        }
+      }
+    }
+  }
 }
 
 export function createDefaultSaveData(now = Date.now()): SaveData {
   const normalizedNow = normalizeTimestamp(now, Date.now());
+  const progression = createDefaultProgressionState();
   return {
     version: SAVE_DATA_VERSION,
     money: INITIAL_MONEY,
@@ -224,6 +302,9 @@ export function createDefaultSaveData(now = Date.now()): SaveData {
     tutorialCompleted: false,
     playStartedAt: normalizedNow,
     elapsedMs: 0,
+    worldClockMs: 0,
+    visualTier: stageToVisualTier(progression.currentStage),
+    progression,
     cleared: false,
     lastSavedAt: normalizedNow,
   };
@@ -286,6 +367,12 @@ function normalizeUnknownSave(value: unknown, now: number): SaveData | null {
   const muted = normalizeBoolean(value.muted, settings.muted);
   const lastSavedAt = normalizeTimestamp(value.lastSavedAt, now);
   const playStartedAt = normalizeTimestamp(value.playStartedAt, lastSavedAt);
+  const elapsedMs = normalizeInteger(
+    value.elapsedMs,
+    Math.max(0, lastSavedAt - playStartedAt),
+    0,
+  );
+  const progression = normalizeProgressionState(value.progression, purchasedUpgradeIds);
 
   return {
     version: SAVE_DATA_VERSION,
@@ -297,11 +384,13 @@ function normalizeUnknownSave(value: unknown, now: number): SaveData | null {
     muted,
     tutorialCompleted: normalizeBoolean(value.tutorialCompleted, false),
     playStartedAt,
-    elapsedMs: normalizeInteger(
-      value.elapsedMs,
-      Math.max(0, lastSavedAt - playStartedAt),
-      0,
+    elapsedMs,
+    worldClockMs: normalizeWorldClock(value.worldClockMs, elapsedMs),
+    visualTier: normalizeVisualTier(
+      value.visualTier,
+      stageToVisualTier(progression.currentStage),
     ),
+    progression,
     cleared:
       normalizeBoolean(value.cleared, false) ||
       (purchasedUpgradeIds.includes("moonlight-sign") &&
@@ -338,6 +427,103 @@ function normalizePurchasedUpgradeIds(values: readonly unknown[]): UpgradeId[] {
   return normalizedIds;
 }
 
+function normalizeProgressionState(
+  value: unknown,
+  legacyPurchasedIds: readonly UpgradeId[],
+): ProgressionState {
+  const defaults = createDefaultProgressionState();
+  const record = isRecord(value) ? value : {};
+  const fallbackStage = Math.min(30, Math.max(1, legacyPurchasedIds.length)) as GrowthStage;
+  const currentStage = normalizeGrowthStage(record.currentStage, fallbackStage);
+  const menuRecords = Array.isArray(record.menuProgress) ? record.menuProgress : [];
+  const menuProgress: MenuProgress[] = defaults.menuProgress.map((defaultMenu) => {
+    const candidate = menuRecords.find(
+      (entry) => isRecord(entry) && entry.menuItemId === defaultMenu.menuItemId,
+    );
+    if (!isRecord(candidate) || !isMenuItemId(candidate.menuItemId)) {
+      return { ...defaultMenu };
+    }
+    return {
+      menuItemId: candidate.menuItemId,
+      unlocked: normalizeBoolean(candidate.unlocked, defaultMenu.unlocked),
+      priceLevel: normalizeInteger(candidate.priceLevel, defaultMenu.priceLevel, 0),
+      speedLevel: normalizeInteger(candidate.speedLevel, defaultMenu.speedLevel, 0),
+      specialMultiplier: normalizeNumber(
+        candidate.specialMultiplier,
+        defaultMenu.specialMultiplier,
+        1,
+        1_000_000,
+      ),
+    };
+  });
+  const workerProgress = normalizeWorkerProgress(record.workerProgress, defaults.workerProgress);
+  const feverState = normalizeFeverState(record.feverState, defaults.feverState);
+
+  return {
+    currentStage,
+    purchasedStepCount: Math.min(
+      getStageConfig(currentStage).purchaseCosts.length,
+      normalizeInteger(record.purchasedStepCount, 0, 0),
+    ),
+    menuProgress,
+    workerProgress,
+    feverState,
+    finaleRevenueMultiplier: normalizeNumber(
+      record.finaleRevenueMultiplier,
+      1,
+      1,
+      10,
+    ),
+  };
+}
+
+function normalizeWorkerProgress(value: unknown, fallback: WorkerProgress): WorkerProgress {
+  const record = isRecord(value) ? value : {};
+  return {
+    chefCount: Math.min(4, normalizeInteger(record.chefCount, fallback.chefCount, 0)),
+    serverCount: Math.min(4, normalizeInteger(record.serverCount, fallback.serverCount, 0)),
+    chefSpeedLevel: normalizeInteger(record.chefSpeedLevel, fallback.chefSpeedLevel, 0),
+    serverSpeedLevel: normalizeInteger(record.serverSpeedLevel, fallback.serverSpeedLevel, 0),
+  };
+}
+
+function normalizeFeverState(value: unknown, fallback: FeverState): FeverState {
+  const record = isRecord(value) ? value : {};
+  const rawLevel = normalizeInteger(record.level, fallback.level, 0);
+  const level = Math.min(3, rawLevel) as FeverState["level"];
+  return {
+    level,
+    gauge: normalizeNumber(record.gauge, fallback.gauge, 0, 100),
+    activeRemainingMs: normalizeInteger(
+      record.activeRemainingMs,
+      fallback.activeRemainingMs,
+      0,
+    ),
+    cooldownRemainingMs: normalizeInteger(
+      record.cooldownRemainingMs,
+      fallback.cooldownRemainingMs,
+      0,
+    ),
+  };
+}
+
+function normalizeGrowthStage(value: unknown, fallback: GrowthStage): GrowthStage {
+  return typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= 30
+    ? value as GrowthStage
+    : fallback;
+}
+
+function normalizeVisualTier(value: unknown, fallback: VisualTier): VisualTier {
+  return typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= 6
+    ? value as VisualTier
+    : fallback;
+}
+
+function normalizeWorldClock(value: unknown, fallback: number): number {
+  const normalized = normalizeInteger(value, fallback, 0);
+  return normalized % WORLD_CYCLE_MS;
+}
+
 function normalizeSettings(value: unknown, legacyMuted: unknown): GameSettings {
   const settings = isRecord(value) ? value : {};
   return {
@@ -348,6 +534,7 @@ function normalizeSettings(value: unknown, legacyMuted: unknown): GameSettings {
       settings.muted,
       normalizeBoolean(legacyMuted, false),
     ),
+    reducedMotion: normalizeBoolean(settings.reducedMotion, false),
   };
 }
 
@@ -391,7 +578,26 @@ function cloneSaveData(save: SaveData): SaveData {
     ...save,
     purchasedUpgradeIds: [...save.purchasedUpgradeIds],
     settings: { ...save.settings },
+    progression: {
+      ...save.progression,
+      menuProgress: save.progression.menuProgress.map((menu) => ({ ...menu })),
+      workerProgress: { ...save.progression.workerProgress },
+      feverState: { ...save.progression.feverState },
+    },
   };
+}
+
+function chooseNewestOptionalSerialized(
+  first: string | null,
+  second: string | null,
+): string | null {
+  if (first === null) {
+    return second;
+  }
+  if (second === null) {
+    return first;
+  }
+  return chooseNewestSerialized(first, second);
 }
 
 function chooseNewestSerialized(primary: string, fallback: string | null): string {

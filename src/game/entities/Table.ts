@@ -13,12 +13,18 @@ export class DiningTable {
   private readonly seatSprite: Phaser.GameObjects.Image;
   private reservedBy?: string;
 
-  public constructor(scene: Phaser.Scene, id: string, x: number, y: number) {
+  public constructor(scene: Phaser.Scene, id: string, x: number, y: number, scale = 0.78) {
     this.scene = scene;
     this.id = id;
-    this.seatPosition = { x, y: y + 9 };
-    this.tableSprite = scene.add.image(x, y - 7, "table").setDepth(20 + Math.round(y));
-    this.seatSprite = scene.add.image(x, y + 12, "seat").setDepth(19 + Math.round(y));
+    this.seatPosition = { x, y: y + 7 };
+    this.tableSprite = scene.add
+      .image(x, y - 6, "table")
+      .setScale(scale)
+      .setDepth(20 + Math.round(y));
+    this.seatSprite = scene.add
+      .image(x, y + 9, "seat")
+      .setScale(scale)
+      .setDepth(19 + Math.round(y));
   }
 
   public isAvailable(): boolean {

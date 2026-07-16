@@ -2,9 +2,16 @@ import Phaser from "phaser";
 import { getCustomerData } from "../data/customerData";
 import { CustomerState, type CustomerKind, type MenuItemId } from "../types/game";
 
+export interface CustomerOptions {
+  readonly patienceMs?: number;
+  readonly vip?: boolean;
+  readonly nightMode?: boolean;
+}
+
 export class Customer extends Phaser.GameObjects.Container {
   public readonly customerId: string;
   public readonly kind: CustomerKind;
+  public readonly isVip: boolean;
   public customerState = CustomerState.ENTERING;
   public assignedTableId?: string;
   public orderId?: MenuItemId;
@@ -19,10 +26,14 @@ export class Customer extends Phaser.GameObjects.Container {
   public readonly moveSpeed: number;
 
   private readonly character: Phaser.GameObjects.Image;
+  private readonly nightRim: Phaser.GameObjects.Image;
   private readonly bubble: Phaser.GameObjects.Image;
   private readonly foodIcon: Phaser.GameObjects.Image;
   private readonly patienceBackground: Phaser.GameObjects.Rectangle;
   private readonly patienceFill: Phaser.GameObjects.Rectangle;
+  private readonly quantityText: Phaser.GameObjects.Text;
+  private readonly statusText: Phaser.GameObjects.Text;
+  private readonly vipText: Phaser.GameObjects.Text;
   private animationClock = 0;
   private animationFrame = 0;
   private showPatience = false;
@@ -33,17 +44,25 @@ export class Customer extends Phaser.GameObjects.Container {
     kind: CustomerKind,
     x: number,
     y: number,
+    options: CustomerOptions = {},
   ) {
     super(scene, x, y);
     this.customerId = customerId;
     this.kind = kind;
+    this.isVip = options.vip ?? false;
     const data = getCustomerData(kind);
-    this.patienceMs = data.patienceMs;
-    this.maxPatienceMs = data.patienceMs;
+    this.patienceMs = options.patienceMs ?? data.patienceMs;
+    this.maxPatienceMs = this.patienceMs;
     this.moveSpeed = kind === "rabbit" ? 34 : kind === "hamster" ? 29 : 26;
     this.targetX = x;
     this.targetY = y;
 
+    this.nightRim = scene.add
+      .image(0, -1, `customer-${kind}-0`)
+      .setTint(0x49bfff)
+      .setAlpha(0.32)
+      .setScale(1.08)
+      .setVisible(options.nightMode ?? false);
     this.character = scene.add.image(0, 0, `customer-${kind}-0`);
     this.bubble = scene.add.image(0, -24, "order-bubble").setVisible(false);
     this.foodIcon = scene.add.image(0, -25, "food-fishcake").setVisible(false);
@@ -55,13 +74,47 @@ export class Customer extends Phaser.GameObjects.Container {
       .rectangle(-12, -18, 24, 1, 0x77d48b)
       .setOrigin(0, 0.5)
       .setVisible(false);
+    this.quantityText = scene.add
+      .text(8, -32, "", {
+        fontFamily: '"Jua", sans-serif',
+        fontSize: "8px",
+        color: "#39243c",
+        stroke: "#fff4d6",
+        strokeThickness: 2,
+      })
+      .setOrigin(0.5)
+      .setVisible(false);
+    this.statusText = scene.add
+      .text(15, -18, "", {
+        fontFamily: '"Jua", sans-serif',
+        fontSize: "7px",
+        color: "#fff4d6",
+        backgroundColor: "#a33a43",
+        padding: { x: 2, y: 0 },
+      })
+      .setOrigin(0.5)
+      .setVisible(false);
+    this.vipText = scene.add
+      .text(0, 14, "VIP", {
+        fontFamily: '"Jua", sans-serif',
+        fontSize: "6px",
+        color: "#3c2638",
+        backgroundColor: "#ffd86a",
+        padding: { x: 2, y: 0 },
+      })
+      .setOrigin(0.5)
+      .setVisible(this.isVip);
 
     this.add([
+      this.nightRim,
       this.character,
       this.bubble,
       this.foodIcon,
       this.patienceBackground,
       this.patienceFill,
+      this.quantityText,
+      this.statusText,
+      this.vipText,
     ]);
     scene.add.existing(this);
     this.setDepth(40 + Math.round(y));
@@ -78,6 +131,8 @@ export class Customer extends Phaser.GameObjects.Container {
     if (state === CustomerState.EATING) {
       this.bubble.setVisible(false);
       this.foodIcon.setVisible(false);
+      this.quantityText.setVisible(false);
+      this.statusText.setVisible(false);
     }
   }
 
@@ -92,6 +147,7 @@ export class Customer extends Phaser.GameObjects.Container {
     if (distance <= 1.2) {
       this.setPosition(this.targetX, this.targetY);
       this.character.setTexture(`customer-${this.kind}-0`);
+      this.nightRim.setTexture(`customer-${this.kind}-0`);
       return true;
     }
 
@@ -104,6 +160,7 @@ export class Customer extends Phaser.GameObjects.Container {
       this.animationClock = 0;
       this.animationFrame = this.animationFrame === 0 ? 1 : 0;
       this.character.setTexture(`customer-${this.kind}-${this.animationFrame}`);
+      this.nightRim.setTexture(`customer-${this.kind}-${this.animationFrame}`);
     }
     this.setDepth(40 + Math.round(this.y));
     return false;
@@ -115,6 +172,7 @@ export class Customer extends Phaser.GameObjects.Container {
     this.orderAccepted = false;
     this.bubble.setVisible(true);
     this.foodIcon.setTexture(`food-${menuItemId}`).setVisible(true);
+    this.quantityText.setText(quantity > 1 ? `×${quantity}` : "").setVisible(quantity > 1);
     this.setCustomerState(CustomerState.ORDERING);
   }
 
@@ -127,6 +185,7 @@ export class Customer extends Phaser.GameObjects.Container {
   public tickPatience(deltaMs: number): void {
     this.stateElapsedMs += deltaMs;
     if (!this.showPatience) {
+      this.statusText.setVisible(false);
       return;
     }
 
@@ -137,6 +196,9 @@ export class Customer extends Phaser.GameObjects.Container {
     this.patienceFill.setFillStyle(
       ratio > 0.58 ? 0x77d48b : ratio > 0.28 ? 0xf3bc61 : 0xe85a59,
     );
+    this.statusText
+      .setText(ratio > 0.58 ? "" : ratio > 0.28 ? "!" : "!!")
+      .setVisible(ratio <= 0.58);
   }
 
   public serve(): void {
@@ -159,7 +221,9 @@ export class Customer extends Phaser.GameObjects.Container {
   }
 
   public getPatienceRatio(): number {
-    return Phaser.Math.Clamp(this.patienceMs / this.maxPatienceMs, 0, 1);
+    return this.maxPatienceMs <= 0
+      ? 0
+      : Phaser.Math.Clamp(this.patienceMs / this.maxPatienceMs, 0, 1);
   }
 
   public showHeart(): void {
@@ -172,6 +236,18 @@ export class Customer extends Phaser.GameObjects.Container {
       ease: "Sine.Out",
       onComplete: () => heart.destroy(),
     });
+  }
+
+  public showWalkout(): void {
+    this.bubble.setVisible(false);
+    this.foodIcon.setVisible(false);
+    this.quantityText.setVisible(false);
+    this.statusText.setText("헉냥!").setVisible(true);
+    this.character.setTint(0x9aa0b8);
+  }
+
+  public setNightMode(enabled: boolean): void {
+    this.nightRim.setVisible(enabled);
   }
 
   public resetBubbleTint(): void {

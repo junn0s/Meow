@@ -17,8 +17,10 @@ export class MenuScene extends Phaser.Scene {
   public create(): void {
     configureHighDefinitionScene(this);
     this.confirmingReset = false;
-    createMenuBackdrop(this);
     const save = this.saveSystem.load();
+    const reducedMotion = save?.settings.reducedMotion
+      || window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
+    createMenuBackdrop(this, reducedMotion);
     this.effects = new SoundManager(save?.muted ?? false);
 
     this.add
@@ -55,7 +57,9 @@ export class MenuScene extends Phaser.Scene {
     const cat = this.add.image(240, 164, "player-down-0").setScale(1.5).setDepth(35);
     this.add.image(203, 166, "chef-0").setScale(1.15).setDepth(34).setAlpha(0.92);
     this.add.image(277, 166, "server-0").setScale(1.15).setDepth(34).setAlpha(0.92);
-    this.tweens.add({ targets: cat, y: 162, duration: 620, yoyo: true, repeat: -1, ease: "Sine.InOut" });
+    if (!reducedMotion) {
+      this.tweens.add({ targets: cat, y: 162, duration: 620, yoyo: true, repeat: -1, ease: "Sine.InOut" });
+    }
     this.add.image(241, 126, "steam-0").setScale(1.2).setDepth(36).setAlpha(0.65);
 
     const hasSave = save !== null;

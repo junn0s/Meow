@@ -53,6 +53,9 @@ export const PIXEL_TEXTURE_KEYS = {
     fishcake: "food-fishcake",
     tteokbokki: "food-tteokbokki",
     fishBread: "food-fish-bread",
+    ramen: "food-ramen",
+    moonSkewer: "food-moon-skewer",
+    moonlightSet: "food-moonlight-set",
   },
   furniture: {
     table: "table",
@@ -62,6 +65,9 @@ export const PIXEL_TEXTURE_KEYS = {
     fishcake: "station-fishcake",
     tteokbokki: "station-tteokbokki",
     fishBread: "station-fish-bread",
+    ramen: "station-ramen",
+    moonSkewer: "station-moon-skewer",
+    moonlightSet: "station-moonlight-set",
   },
   signs: {
     stall: "sign-stall",
@@ -99,7 +105,13 @@ type Graphics = Phaser.GameObjects.Graphics;
 type DrawTexture = (graphics: Graphics) => void;
 type Direction = "down" | "up" | "left" | "right";
 type CustomerKind = "rabbit" | "dog" | "hamster" | "raccoon";
-type FoodKind = "fishcake" | "tteokbokki" | "fish-bread";
+type FoodKind =
+  | "fishcake"
+  | "tteokbokki"
+  | "fish-bread"
+  | "ramen"
+  | "moon-skewer"
+  | "moonlight-set";
 
 interface TexturePainter {
   paint(key: string, width: number, height: number, draw: DrawTexture): void;
@@ -207,7 +219,7 @@ function drawCheesePlayer(graphics: Graphics, direction: Direction, frame: numbe
   rect(graphics, palette.cream, 18, rightFootY, 3, 2);
 }
 
-function drawChef(graphics: Graphics, frame: number): void {
+function drawChef(graphics: Graphics, frame: number, rank = 0): void {
   const palette = PIXEL_PALETTE;
   const bob = frame === 1 ? 1 : 0;
   pixelShadow(graphics);
@@ -226,11 +238,17 @@ function drawChef(graphics: Graphics, frame: number): void {
   rect(graphics, palette.outline, 19, 11 + bob, 2, 2);
   rect(graphics, palette.pink, 15, 14 + bob, 2, 2);
   rect(graphics, palette.red, 15, 18 + bob, 2, 2);
+  if (rank > 0) {
+    const rankColors = [palette.redLight, palette.blue, palette.green, palette.goldLight] as const;
+    const rankColor = rankColors[Math.min(3, rank - 1)] ?? palette.redLight;
+    rect(graphics, rankColor, 12, 7 + bob, 8, 2);
+    rect(graphics, rankColor, 11, 20 + bob, 3 + rank, 2);
+  }
   rect(graphics, palette.outline, frame === 0 ? 9 : 10, 25, 6, 3);
   rect(graphics, palette.outline, frame === 0 ? 17 : 16, 25, 6, 3);
 }
 
-function drawServer(graphics: Graphics, frame: number): void {
+function drawServer(graphics: Graphics, frame: number, rank = 0): void {
   const palette = PIXEL_PALETTE;
   const bob = frame === 1 ? 1 : 0;
   pixelShadow(graphics);
@@ -251,6 +269,13 @@ function drawServer(graphics: Graphics, frame: number): void {
   rect(graphics, palette.pink, 15, 15 + bob, 2, 2);
   rect(graphics, palette.red, 13, 18 + bob, 3, 3);
   rect(graphics, palette.redDark, 16, 18 + bob, 3, 3);
+  if (rank > 0) {
+    const rankColors = [palette.redLight, palette.blue, palette.green, palette.goldLight] as const;
+    const rankColor = rankColors[Math.min(3, rank - 1)] ?? palette.redLight;
+    rect(graphics, rankColor, 21, 17 + bob, 3, 3);
+    rect(graphics, palette.outline, 23, 13 + bob, 7, 2);
+    rect(graphics, rankColor, 24, 12 + bob, 5, 2);
+  }
   rect(graphics, palette.outline, frame === 0 ? 8 : 10, 25, 7, 3);
   rect(graphics, palette.outline, frame === 0 ? 17 : 15, 25, 7, 3);
 }
@@ -342,7 +367,7 @@ function drawFood(graphics: Graphics, kind: FoodKind, offsetX = 0, offsetY = 0):
     rect(graphics, palette.cream, offsetX + 5, offsetY + 6, 3, 2);
     rect(graphics, palette.orangeLight, offsetX + 9, offsetY + 8, 3, 2);
     rect(graphics, palette.steelLight, offsetX + 11, offsetY + 2, 2, 6);
-  } else {
+  } else if (kind === "fish-bread") {
     rect(graphics, palette.outline, offsetX + 2, offsetY + 4, 12, 8);
     rect(graphics, palette.orangeLight, offsetX + 3, offsetY + 5, 10, 6);
     rect(graphics, palette.orangeDark, offsetX + 5, offsetY + 6, 6, 1);
@@ -351,6 +376,29 @@ function drawFood(graphics: Graphics, kind: FoodKind, offsetX = 0, offsetY = 0):
     rect(graphics, palette.outline, offsetX + 12, offsetY + 6, 3, 4);
     rect(graphics, palette.orangeLight, offsetX + 2, offsetY + 7, 2, 2);
     rect(graphics, palette.orangeLight, offsetX + 12, offsetY + 7, 2, 2);
+  } else if (kind === "ramen") {
+    rect(graphics, palette.outline, offsetX + 2, offsetY + 7, 12, 6);
+    rect(graphics, palette.redDark, offsetX + 3, offsetY + 8, 10, 4);
+    rect(graphics, palette.orangeLight, offsetX + 4, offsetY + 7, 8, 2);
+    rect(graphics, palette.cream, offsetX + 5, offsetY + 8, 6, 1);
+    rect(graphics, palette.yellow, offsetX + 7, offsetY + 6, 3, 2);
+    rect(graphics, palette.steelLight, offsetX + 12, offsetY + 2, 1, 7);
+  } else if (kind === "moon-skewer") {
+    rect(graphics, palette.woodDark, offsetX + 3, offsetY + 12, 11, 2);
+    rect(graphics, palette.outline, offsetX + 3, offsetY + 3, 5, 5);
+    rect(graphics, palette.redLight, offsetX + 4, offsetY + 4, 3, 3);
+    rect(graphics, palette.outline, offsetX + 7, offsetY + 6, 5, 5);
+    rect(graphics, palette.orangeLight, offsetX + 8, offsetY + 7, 3, 3);
+    rect(graphics, palette.outline, offsetX + 10, offsetY + 9, 5, 5);
+    rect(graphics, palette.mint, offsetX + 11, offsetY + 10, 3, 3);
+  } else {
+    rect(graphics, palette.outline, offsetX + 1, offsetY + 5, 14, 9);
+    rect(graphics, palette.steelLight, offsetX + 2, offsetY + 6, 12, 7);
+    rect(graphics, palette.redDark, offsetX + 3, offsetY + 8, 5, 4);
+    rect(graphics, palette.orangeLight, offsetX + 4, offsetY + 7, 3, 3);
+    rect(graphics, palette.cream, offsetX + 9, offsetY + 7, 4, 4);
+    rect(graphics, palette.mint, offsetX + 10, offsetY + 6, 2, 2);
+    rect(graphics, palette.goldLight, offsetX + 7, offsetY + 2, 2, 4);
   }
 }
 
@@ -435,6 +483,19 @@ function drawFishBreadStation(graphics: Graphics): void {
   rect(graphics, palette.orangeDark, 31, 12, 2, 2);
   rect(graphics, palette.outline, 20, 2, 8, 5);
   rect(graphics, palette.wood, 21, 3, 6, 3);
+}
+
+function drawPremiumStation(graphics: Graphics, kind: FoodKind): void {
+  const palette = PIXEL_PALETTE;
+  drawStationBase(graphics);
+  rect(graphics, palette.outline, 7, 5, 34, 15);
+  rect(graphics, kind === "moonlight-set" ? palette.nightLight : palette.charcoal, 8, 6, 32, 13);
+  rect(graphics, kind === "moon-skewer" ? palette.redDark : palette.steel, 10, 8, 28, 9);
+  drawFood(graphics, kind, 16, 2);
+  if (kind === "moonlight-set") {
+    rect(graphics, palette.goldLight, 9, 7, 2, 10);
+    rect(graphics, palette.mint, 37, 7, 2, 10);
+  }
 }
 
 function drawSign(graphics: Graphics, kind: "stall" | "neon" | "moon"): void {
@@ -525,6 +586,10 @@ function createCharacters(painter: TexturePainter): void {
   for (let frame = 0; frame < 2; frame += 1) {
     painter.paint(`chef-${frame}`, 32, 32, (graphics) => drawChef(graphics, frame));
     painter.paint(`server-${frame}`, 32, 32, (graphics) => drawServer(graphics, frame));
+    for (let rank = 1; rank <= 4; rank += 1) {
+      painter.paint(`chef-${rank}-${frame}`, 32, 32, (graphics) => drawChef(graphics, frame, rank));
+      painter.paint(`server-${rank}-${frame}`, 32, 32, (graphics) => drawServer(graphics, frame, rank));
+    }
   }
 
   const customerKinds: readonly CustomerKind[] = ["rabbit", "dog", "hamster", "raccoon"];
@@ -538,7 +603,9 @@ function createCharacters(painter: TexturePainter): void {
 }
 
 function createFoods(painter: TexturePainter): void {
-  const foodKinds: readonly FoodKind[] = ["fishcake", "tteokbokki", "fish-bread"];
+  const foodKinds: readonly FoodKind[] = [
+    "fishcake", "tteokbokki", "fish-bread", "ramen", "moon-skewer", "moonlight-set",
+  ];
   for (const kind of foodKinds) {
     painter.paint(`food-${kind}`, 16, 16, (graphics) => drawFood(graphics, kind));
   }
@@ -550,6 +617,9 @@ function createFurnitureAndStations(painter: TexturePainter): void {
   painter.paint("station-fishcake", 48, 48, drawFishcakeStation);
   painter.paint("station-tteokbokki", 48, 48, drawTteokbokkiStation);
   painter.paint("station-fish-bread", 48, 48, drawFishBreadStation);
+  for (const kind of ["ramen", "moon-skewer", "moonlight-set"] as const) {
+    painter.paint(`station-${kind}`, 48, 48, (graphics) => drawPremiumStation(graphics, kind));
+  }
   painter.paint("sign-stall", 48, 24, (graphics) => drawSign(graphics, "stall"));
   painter.paint("sign-neon", 48, 24, (graphics) => drawSign(graphics, "neon"));
   painter.paint("sign-moon", 48, 24, (graphics) => drawSign(graphics, "moon"));
@@ -561,7 +631,9 @@ function createUiAndEffects(painter: TexturePainter): void {
   painter.paint("rating-star", 14, 14, drawRatingStar);
   painter.paint("order-bubble", 24, 24, drawOrderBubble);
 
-  const orderKinds: readonly FoodKind[] = ["fishcake", "tteokbokki", "fish-bread"];
+  const orderKinds: readonly FoodKind[] = [
+    "fishcake", "tteokbokki", "fish-bread", "ramen", "moon-skewer", "moonlight-set",
+  ];
   for (const kind of orderKinds) {
     painter.paint(`order-bubble-${kind}`, 24, 24, (graphics) => {
       drawOrderBubble(graphics);

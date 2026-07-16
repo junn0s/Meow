@@ -1,15 +1,20 @@
 import type { EconomyState, SaleResult } from "../types/game";
+import {
+  calculateSale,
+  type SaleFormulaInput,
+} from "../economy/economyMath";
 
 export const INITIAL_MONEY = 0;
 export const INITIAL_RATING = 1;
 export const MAX_RATING = 5;
 
-/**
- * Keeping the documented upgrade costs while paying out three times the menu
- * board price makes a complete run land near the five-to-eight minute target.
- */
-export const DEFAULT_SALE_PAYOUT_MULTIPLIER = 3;
+/** Displayed menu prices and paid prices now share the same 1:1 base amount. */
+export const DEFAULT_SALE_PAYOUT_MULTIPLIER = 1;
 export const DEFAULT_RATING_GAIN_PER_CUSTOMER = 0.12;
+
+export interface RecordSaleInput extends SaleFormulaInput {
+  readonly ratingGain?: number;
+}
 
 export type EconomyListener = (state: EconomyState) => void;
 
@@ -88,30 +93,31 @@ export class EconomySystem {
    * Atomically records payment, the served guest, and rating progress.
    * tipRate is expressed as a fraction (0.3 means a 30% tip).
    */
+  public recordSale(input: RecordSaleInput): SaleResult;
+  public recordSale(menuPrice: number, tipRate?: number, ratingGain?: number): SaleResult;
   public recordSale(
-    menuPrice: number,
-    tipRate = 0,
-    ratingGain = DEFAULT_RATING_GAIN_PER_CUSTOMER,
-    payoutMultiplier = DEFAULT_SALE_PAYOUT_MULTIPLIER,
+    inputOrMenuPrice: RecordSaleInput | number,
+    legacyTipRate = 0,
+    legacyRatingGain = DEFAULT_RATING_GAIN_PER_CUSTOMER,
   ): SaleResult {
-    assertNonNegativeFiniteNumber(menuPrice, "Menu price");
-    assertNonNegativeFiniteNumber(tipRate, "Tip rate");
+    const input: RecordSaleInput = typeof inputOrMenuPrice === "number"
+      ? {
+          unitPrice: inputOrMenuPrice,
+          tipRate: legacyTipRate,
+          ratingGain: legacyRatingGain,
+        }
+      : inputOrMenuPrice;
+    const ratingGain = input.ratingGain ?? DEFAULT_RATING_GAIN_PER_CUSTOMER;
     assertNonNegativeFiniteNumber(ratingGain, "Rating gain");
-    assertNonNegativeFiniteNumber(payoutMultiplier, "Payout multiplier");
+    const sale = calculateSale(input);
 
-    const baseAmount = Math.round(menuPrice * payoutMultiplier);
-    const tipAmount = Math.round(baseAmount * tipRate);
-    const totalAmount = baseAmount + tipAmount;
-
-    this.money += totalAmount;
+    this.money += sale.totalAmount;
     this.customerCount += 1;
     this.rating = normalizeRating(this.rating + ratingGain, this.rating);
     this.notify();
 
     return {
-      baseAmount,
-      tipAmount,
-      totalAmount,
+      ...sale,
       moneyAfterSale: this.money,
       customerCount: this.customerCount,
       rating: this.rating,
@@ -141,6 +147,18 @@ export class EconomySystem {
   public increaseRating(amount: number): number {
     assertNonNegativeFiniteNumber(amount, "Rating increase");
     return this.setRating(this.rating + amount);
+  }
+
+  /** Updates the displayed rating from the exponentially weighted recent service score. */
+  public recordServiceScore(score: number): number {
+    if (!Number.isFinite(score) || score < 0 || score > 1) {
+      throw new RangeError("Service score must be between 0 and 1.");
+    }
+    const previousAverage = clampNumber((this.rating - 1) / 4, 0, 1);
+    const nextAverage = previousAverage * 0.92 + score * 0.08;
+    this.rating = normalizeRating(1 + 4 * nextAverage, this.rating);
+    this.notify();
+    return this.rating;
   }
 
   public restore(state: EconomyState): void {
@@ -218,4 +236,8 @@ function normalizeRating(value: number | undefined, fallback: number): number {
   }
 
   return Math.round(Math.min(Math.max(value, 0), MAX_RATING) * 100) / 100;
+}
+
+function clampNumber(value: number, minimum: number, maximum: number): number {
+  return Math.min(maximum, Math.max(minimum, value));
 }

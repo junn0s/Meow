@@ -177,6 +177,34 @@ body::before {
   border: 0;
 }
 
+.touch-controls {
+  display: none;
+}
+
+.touch-controls button {
+  min-width: 44px;
+  min-height: 44px;
+  border: 2px solid #66739d;
+  border-bottom-width: 4px;
+  border-radius: 10px;
+  background: #18203bd9;
+  color: #fff0bf;
+  font: 700 13px/1 system-ui, sans-serif;
+  touch-action: none;
+  user-select: none;
+}
+
+.touch-controls button:focus-visible {
+  outline: 3px solid #45ffd2;
+  outline-offset: 2px;
+}
+
+.touch-controls button:active {
+  border-bottom-width: 2px;
+  background: #33446e;
+  transform: translateY(2px);
+}
+
 @keyframes rain {
   from { transform: translate3d(-20px, -20px, 0); }
   to { transform: translate3d(28px, 48px, 0); }
@@ -190,9 +218,37 @@ body::before {
 
 @media (max-width: 640px) {
   .marquee { top: -46px; transform: translateX(-50%) scale(0.88); }
-  .keyboard-hint { font-size: 10px; }
+  .keyboard-hint { display: none; }
+  .app-shell { align-content: start; padding: 58px 8px 10px; }
+  .game-frame { width: 100%; }
+  .touch-controls {
+    display: grid;
+    grid-template-columns: 150px 1fr 46px;
+    align-items: end;
+    gap: 14px;
+    width: min(100%, 520px);
+    margin: 14px auto 0;
+  }
+  .touch-controls__pad {
+    display: grid;
+    grid-template-columns: repeat(3, 46px);
+    grid-template-rows: repeat(2, 46px);
+    gap: 4px;
+  }
+  .touch-controls__pad button:nth-child(1) { grid-column: 2; }
+  .touch-controls__pad button:nth-child(2) { grid-column: 1; grid-row: 2; }
+  .touch-controls__pad button:nth-child(3) { grid-column: 2; grid-row: 2; }
+  .touch-controls__pad button:nth-child(4) { grid-column: 3; grid-row: 2; }
+  .touch-controls__action {
+    justify-self: end;
+    width: 76px;
+    height: 64px;
+    border-color: #d17b4f !important;
+    border-radius: 50% !important;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
   body::before { animation: none; }
+  *, *::before, *::after { scroll-behavior: auto !important; }
 }
