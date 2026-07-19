@@ -318,8 +318,13 @@ export interface GameSettings {
   readonly musicVolume: number;
   readonly sfxVolume: number;
   readonly muted: boolean;
+  readonly musicMuted: boolean;
+  readonly sfxMuted: boolean;
+  readonly performanceMode: PerformanceMode;
   readonly reducedMotion: boolean;
 }
+
+export type PerformanceMode = "quality" | "balanced" | "battery";
 
 export interface SaveData {
   readonly version: number;

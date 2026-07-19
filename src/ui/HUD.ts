@@ -9,6 +9,7 @@ export class HUD {
   private readonly moneyText: Phaser.GameObjects.Text;
   private readonly ratingText: Phaser.GameObjects.Text;
   private readonly customerText: Phaser.GameObjects.Text;
+  private readonly fameText: Phaser.GameObjects.Text;
   private readonly heldText: Phaser.GameObjects.Text;
   private readonly clockText: Phaser.GameObjects.Text;
   private readonly phaseText: Phaser.GameObjects.Text;
@@ -61,6 +62,13 @@ export class HUD {
         color: "#c9d4ff",
       })
       .setDepth(902);
+    this.fameText = scene.add
+      .text(82, 22, "명성 1", {
+        fontFamily: '"Gowun Dodum", sans-serif',
+        fontSize: "6px",
+        color: "#75e1d4",
+      })
+      .setDepth(903);
     this.heldText = scene.add
       .text(203, 21, "손이 비었어요", {
         fontFamily: '"Gowun Dodum", sans-serif',
@@ -145,6 +153,10 @@ export class HUD {
     this.customerText.setText(`손님 ${count}`);
   }
 
+  public setFame(level: number): void {
+    this.fameText.setText(`명성 ${Math.max(1, Math.min(6, Math.floor(level)))}`);
+  }
+
   public setHeldFood(menuItemId?: MenuItemId): void {
     if (menuItemId === undefined) {
       this.heldText.setText("손이 비었어요").setColor("#9ea9ca");
@@ -197,7 +209,9 @@ export class HUD {
       .setText(active
         ? `FEVER ×${multiplier} · ${Math.ceil(activeRemainingMs / 1_000)}s`
         : `FEVER ×${multiplier} · ${Math.round(gauge)}%`)
-      .setColor(active ? "#9ffff0" : "#b5c7d8");
+      .setColor(activeRemainingMs > 0 && activeRemainingMs <= 3_000
+        ? "#ff8f9c"
+        : active ? "#9ffff0" : "#b5c7d8");
     this.feverFill
       .setFillStyle(active ? 0x45ffd2 : 0x39bfa8, 1)
       .setDisplaySize(50 * (active ? 1 : Math.min(1, Math.max(0, gauge / 100))), 3);

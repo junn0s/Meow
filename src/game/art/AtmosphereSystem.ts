@@ -1,5 +1,9 @@
 import Phaser from "phaser";
-import type { VisualPhase, VisualTier } from "../types/game";
+import type { PerformanceMode, VisualPhase, VisualTier } from "../types/game";
+import {
+  getPerformanceProfile,
+  type PerformanceProfile,
+} from "../systems/PerformanceSystem";
 
 export type ServiceLightMode = "normal" | "fever" | "rush";
 export const MAX_DYNAMIC_LIGHTS = 24;
@@ -14,6 +18,9 @@ export interface AtmosphereDiagnostics {
   readonly reducedMotion: boolean;
   readonly mode: ServiceLightMode;
   readonly lowPowerMode: boolean;
+  readonly performanceMode: PerformanceMode;
+  readonly updateIntervalMs: number;
+  readonly reflectionsEnabled: boolean;
 }
 
 /** Fixed-size, allocation-free atmosphere layers for the gameplay scene. */
@@ -25,20 +32,31 @@ export class AtmosphereSystem {
   private tier: VisualTier = 1;
   private mode: ServiceLightMode = "normal";
   private reducedMotion: boolean;
+  private profile: PerformanceProfile;
+  private atmosphereAccumulatorMs = 0;
 
   public constructor(
     scene: Phaser.Scene,
     reducedMotion = false,
-    private readonly lowPowerMode = false,
+    performanceMode: PerformanceMode = "balanced",
+    private readonly mobile = false,
   ) {
     this.reducedMotion = reducedMotion;
-    this.lightRig = new LightRig(scene, reducedMotion, lowPowerMode);
+    this.profile = getPerformanceProfile(performanceMode, mobile);
+    this.lightRig = new LightRig(scene, reducedMotion, this.profile);
     this.reflections = new ReflectionLayer(scene);
-    this.weather = new WeatherLayer(scene, reducedMotion, lowPowerMode);
+    this.reflections.setEnabled(this.profile.reflectionsEnabled);
+    this.weather = new WeatherLayer(scene, reducedMotion, this.profile);
   }
 
   public update(deltaMs: number): void {
-    this.weather.update(deltaMs);
+    this.atmosphereAccumulatorMs += deltaMs;
+    if (
+      this.profile.atmosphereUpdateIntervalMs > 0
+      && this.atmosphereAccumulatorMs < this.profile.atmosphereUpdateIntervalMs
+    ) return;
+    this.weather.update(this.atmosphereAccumulatorMs);
+    this.atmosphereAccumulatorMs = 0;
   }
 
   public setPhase(phase: VisualPhase, immediate = false): void {
@@ -73,6 +91,16 @@ export class AtmosphereSystem {
     this.lightRig.setState(this.phase, this.tier, this.mode, true);
   }
 
+  public setPerformanceMode(mode: PerformanceMode): void {
+    this.profile = getPerformanceProfile(mode, this.mobile);
+    this.atmosphereAccumulatorMs = 0;
+    this.lightRig.setPerformanceProfile(this.profile);
+    this.weather.setPerformanceProfile(this.profile);
+    this.reflections.setEnabled(this.profile.reflectionsEnabled);
+    this.lightRig.setState(this.phase, this.tier, this.mode, true);
+    this.reflections.setState(this.phase, this.tier, this.mode);
+  }
+
   public getDiagnostics(): AtmosphereDiagnostics {
     return {
       activeLights: this.lightRig.getActiveCount(),
@@ -80,7 +108,10 @@ export class AtmosphereSystem {
       visibleParticles: this.weather.getVisibleCount(),
       reducedMotion: this.reducedMotion,
       mode: this.mode,
-      lowPowerMode: this.lowPowerMode,
+      lowPowerMode: this.profile.mode !== "quality",
+      performanceMode: this.profile.mode,
+      updateIntervalMs: this.profile.atmosphereUpdateIntervalMs,
+      reflectionsEnabled: this.profile.reflectionsEnabled,
     };
   }
 
@@ -101,7 +132,7 @@ class LightRig {
   public constructor(
     scene: Phaser.Scene,
     reducedMotion: boolean,
-    private readonly lowPowerMode: boolean,
+    private profile: PerformanceProfile,
   ) {
     this.scene = scene;
     this.reducedMotion = reducedMotion;
@@ -125,6 +156,10 @@ class LightRig {
     this.reducedMotion = reducedMotion;
   }
 
+  public setPerformanceProfile(profile: PerformanceProfile): void {
+    this.profile = profile;
+  }
+
   public setState(
     phase: VisualPhase,
     tier: VisualTier,
@@ -134,7 +169,7 @@ class LightRig {
     const phaseVisible = phase === "night" || phase === "sunset" || phase === "dawn";
     const tierCount = phaseVisible ? tier * 3 : 0;
     const modeBonus = mode === "normal" ? 0 : 4;
-    const lightLimit = this.lowPowerMode ? 16 : MAX_DYNAMIC_LIGHTS;
+    const lightLimit = this.profile.lightLimit;
     this.activeCount = Math.min(lightLimit, tierCount + this.workerCount + modeBonus);
     const color = mode === "rush" ? 0xf15bd1 : mode === "fever" ? 0x45ffd2 : 0x38d7ff;
     const targetAlpha = phase === "night" ? 0.9 : phaseVisible ? 0.28 : 0;
@@ -167,6 +202,7 @@ class LightRig {
 
 class ReflectionLayer {
   private readonly graphics: Phaser.GameObjects.Graphics;
+  private enabled = true;
 
   public constructor(scene: Phaser.Scene) {
     this.graphics = scene.add.graphics().setDepth(5);
@@ -174,7 +210,7 @@ class ReflectionLayer {
 
   public setState(phase: VisualPhase, tier: VisualTier, mode: ServiceLightMode): void {
     this.graphics.clear();
-    if (phase === "day") return;
+    if (!this.enabled || phase === "day") return;
     const alpha = phase === "night" ? 0.22 : 0.1;
     const accent = mode === "rush" ? 0xf15bd1 : mode === "fever" ? 0x45ffd2 : 0x38d7ff;
     for (let index = 0; index < tier + 2; index += 1) {
@@ -185,6 +221,11 @@ class ReflectionLayer {
       this.graphics.fillStyle(accent, alpha * 0.45);
       this.graphics.fillRect(x + 5, y + 4, 12 + tier * 3, 1);
     }
+  }
+
+  public setEnabled(enabled: boolean): void {
+    this.enabled = enabled;
+    if (!enabled) this.graphics.clear();
   }
 
   public destroy(): void {
@@ -201,7 +242,7 @@ class WeatherLayer {
   public constructor(
     private readonly scene: Phaser.Scene,
     reducedMotion: boolean,
-    private readonly lowPowerMode: boolean,
+    private profile: PerformanceProfile,
   ) {
     this.reducedMotion = reducedMotion;
     for (let index = 0; index < RAIN_PARTICLE_COUNT; index += 1) {
@@ -236,7 +277,7 @@ class WeatherLayer {
   }
 
   public update(deltaMs: number): void {
-    const rainCount = this.reducedMotion ? 12 : this.lowPowerMode ? 24 : RAIN_PARTICLE_COUNT;
+    const rainCount = this.reducedMotion ? Math.min(12, this.profile.rainLimit) : this.profile.rainLimit;
     const rainSpeed = this.reducedMotion ? 0.035 : 0.095;
     for (let index = 0; index < rainCount; index += 1) {
       const drop = this.rain[index];
@@ -245,7 +286,7 @@ class WeatherLayer {
       drop.y += deltaMs * rainSpeed;
       if (drop.y > 274) drop.setPosition(Phaser.Math.Between(20, 370), 34);
     }
-    const mistCount = this.reducedMotion ? 3 : this.lowPowerMode ? 6 : MIST_PARTICLE_COUNT;
+    const mistCount = this.reducedMotion ? Math.min(3, this.profile.mistLimit) : this.profile.mistLimit;
     for (let index = 0; index < mistCount; index += 1) {
       const fog = this.mist[index];
       if (fog === undefined || !fog.visible) continue;
@@ -264,6 +305,11 @@ class WeatherLayer {
     this.refreshVisibility();
   }
 
+  public setPerformanceProfile(profile: PerformanceProfile): void {
+    this.profile = profile;
+    this.refreshVisibility();
+  }
+
   public getPoolSize(): number {
     return this.rain.length + this.mist.length;
   }
@@ -279,12 +325,12 @@ class WeatherLayer {
   private refreshVisibility(): void {
     const rainy = this.phase === "night" || this.phase === "sunset";
     const rainCount = rainy
-      ? (this.reducedMotion ? 12 : this.lowPowerMode ? 24 : RAIN_PARTICLE_COUNT)
+      ? (this.reducedMotion ? Math.min(12, this.profile.rainLimit) : this.profile.rainLimit)
       : 0;
     this.rain.forEach((drop, index) => drop.setVisible(index < rainCount));
     const foggy = this.phase === "dawn";
     const mistCount = foggy
-      ? (this.reducedMotion ? 3 : this.lowPowerMode ? 6 : MIST_PARTICLE_COUNT)
+      ? (this.reducedMotion ? Math.min(3, this.profile.mistLimit) : this.profile.mistLimit)
       : 0;
     this.mist.forEach((fog, index) => fog.setVisible(index < mistCount).setAlpha(foggy ? 0.12 : 0));
   }

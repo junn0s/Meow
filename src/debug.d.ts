@@ -26,6 +26,23 @@ export interface MeowDinerDebugState {
     readonly rushRemainingMs: number;
     readonly fever: ProgressionState["feverState"];
     readonly feverMultiplier: number;
+    readonly musicPlaybackRate: number;
+    readonly audio: {
+      readonly context?: VisualPhase | "menu";
+      readonly trackIndex: number;
+      readonly paused: boolean;
+      readonly feverLayerActive: boolean;
+      readonly playbackRate: number;
+      readonly currentTimeSeconds: number;
+      readonly settings: {
+        readonly masterVolume: number;
+        readonly musicVolume: number;
+        readonly sfxVolume: number;
+        readonly muted: boolean;
+        readonly musicMuted: boolean;
+        readonly sfxMuted: boolean;
+      };
+    };
     readonly promotionMenuId?: MenuItemId;
     readonly promotionRemainingMs: number;
     readonly tickets: {
@@ -47,6 +64,7 @@ export interface MeowDinerDebugState {
     readonly ready: number;
     readonly active: boolean;
     readonly activeCount: number;
+    readonly worktopSlots: number;
   }[];
   readonly atmosphere: {
     readonly activeLights: number;
@@ -55,8 +73,17 @@ export interface MeowDinerDebugState {
     readonly reducedMotion: boolean;
     readonly mode: "normal" | "fever" | "rush";
     readonly lowPowerMode: boolean;
+    readonly performanceMode: "quality" | "balanced" | "battery";
+    readonly updateIntervalMs: number;
+    readonly reflectionsEnabled: boolean;
   };
-  readonly performance: { readonly averageFps: number; readonly sampleCount: number };
+  readonly performance: {
+    readonly averageFps: number;
+    readonly sampleCount: number;
+    readonly targetFps: number;
+    readonly mode: "quality" | "balanced" | "battery";
+    readonly mobileProfile: boolean;
+  };
   readonly offlineReward?: { readonly elapsedMs: number; readonly amount: number; readonly capped: boolean };
   readonly player: {
     readonly x: number;
@@ -73,7 +100,9 @@ export interface MeowDinerDebugState {
     readonly quantity: number;
     readonly remainingQuantity: number;
     readonly patienceMs: number;
+    readonly maxPatienceMs: number;
     readonly vip: boolean;
+    readonly specialOrder: boolean;
   }[];
 }
 
@@ -93,10 +122,13 @@ export interface MeowDinerDebugApi {
   setVisualTier(tier: VisualTier): void;
   setStage(stage: GrowthStage): void;
   spawnVip(): void;
+  spawnSpecial(): void;
   triggerRush(): boolean;
   triggerFever(): boolean;
   triggerPromotion(menuItemId?: MenuItemId): boolean;
   setReducedMotion(reducedMotion: boolean): void;
+  setPerformanceMode(mode: "quality" | "balanced" | "battery"): void;
+  setAppHidden(hidden: boolean): void;
   purchaseNext(): boolean;
   skipTutorial(): void;
   setPlayerPosition(x: number, y: number): void;

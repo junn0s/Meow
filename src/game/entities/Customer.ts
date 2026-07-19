@@ -6,12 +6,14 @@ export interface CustomerOptions {
   readonly patienceMs?: number;
   readonly vip?: boolean;
   readonly nightMode?: boolean;
+  readonly specialOrder?: boolean;
 }
 
 export class Customer extends Phaser.GameObjects.Container {
   public readonly customerId: string;
   public readonly kind: CustomerKind;
   public readonly isVip: boolean;
+  public readonly isSpecialOrder: boolean;
   public customerState = CustomerState.ENTERING;
   public assignedTableId?: string;
   public orderId?: MenuItemId;
@@ -35,6 +37,7 @@ export class Customer extends Phaser.GameObjects.Container {
   private readonly quantityText: Phaser.GameObjects.Text;
   private readonly statusText: Phaser.GameObjects.Text;
   private readonly vipText: Phaser.GameObjects.Text;
+  private readonly specialText: Phaser.GameObjects.Text;
   private animationClock = 0;
   private animationFrame = 0;
   private showPatience = false;
@@ -51,6 +54,7 @@ export class Customer extends Phaser.GameObjects.Container {
     this.customerId = customerId;
     this.kind = kind;
     this.isVip = options.vip ?? false;
+    this.isSpecialOrder = options.specialOrder ?? false;
     const data = getCustomerData(kind);
     this.patienceMs = options.patienceMs ?? data.patienceMs;
     this.maxPatienceMs = this.patienceMs;
@@ -105,6 +109,16 @@ export class Customer extends Phaser.GameObjects.Container {
       })
       .setOrigin(0.5)
       .setVisible(this.isVip);
+    this.specialText = scene.add
+      .text(0, 20, "★ 특별", {
+        fontFamily: '"Jua", sans-serif',
+        fontSize: "6px",
+        color: "#291d3b",
+        backgroundColor: "#8de6db",
+        padding: { x: 2, y: 0 },
+      })
+      .setOrigin(0.5)
+      .setVisible(this.isSpecialOrder);
 
     this.add([
       this.nightRim,
@@ -116,6 +130,7 @@ export class Customer extends Phaser.GameObjects.Container {
       this.quantityText,
       this.statusText,
       this.vipText,
+      this.specialText,
     ]);
     scene.add.existing(this);
     this.setDepth(40 + Math.round(y));
@@ -125,7 +140,9 @@ export class Customer extends Phaser.GameObjects.Container {
     this.customerState = state;
     this.stateElapsedMs = 0;
     this.showPatience =
-      state === CustomerState.ORDERING || state === CustomerState.WAITING_FOR_FOOD;
+      state === CustomerState.WAITING_FOR_SEAT
+      || state === CustomerState.ORDERING
+      || state === CustomerState.WAITING_FOR_FOOD;
     this.patienceBackground.setVisible(this.showPatience);
     this.patienceFill.setVisible(this.showPatience);
 
@@ -160,8 +177,10 @@ export class Customer extends Phaser.GameObjects.Container {
     if (this.animationClock >= 190) {
       this.animationClock = 0;
       this.animationFrame = this.animationFrame === 0 ? 1 : 0;
-      this.character.setTexture(`customer-${this.kind}-${this.animationFrame}`);
-      this.nightRim.setTexture(`customer-${this.kind}-${this.animationFrame}`);
+      if (this.x >= -8 && this.x <= 358 && this.y >= 32 && this.y <= 270) {
+        this.character.setTexture(`customer-${this.kind}-${this.animationFrame}`);
+        this.nightRim.setTexture(`customer-${this.kind}-${this.animationFrame}`);
+      }
     }
     this.setDepth(40 + Math.round(this.y));
     return false;
@@ -175,8 +194,8 @@ export class Customer extends Phaser.GameObjects.Container {
     this.orderAccepted = false;
     if (patienceBudgetMs !== undefined) {
       const normalizedPatience = Math.max(1, Math.round(patienceBudgetMs));
-      this.maxPatienceMs = Math.max(this.maxPatienceMs, normalizedPatience);
-      this.patienceMs = Math.max(this.patienceMs, normalizedPatience);
+      this.maxPatienceMs = normalizedPatience;
+      this.patienceMs = normalizedPatience;
     }
     this.bubble.setVisible(true);
     this.foodIcon.setTexture(`food-${menuItemId}`).setVisible(true);

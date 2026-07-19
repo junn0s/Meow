@@ -22,8 +22,12 @@ export class MenuScene extends Phaser.Scene {
     const reducedMotion = save?.settings.reducedMotion
       || window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
     createMenuBackdrop(this, reducedMotion);
-    this.effects = new SoundManager(save?.muted ?? false);
+    this.effects = new SoundManager(save?.settings ?? false);
     this.effects.setMenuMusic();
+    const handleVisibilityChange = (): void => {
+      this.effects?.setMusicPaused(document.visibilityState === "hidden");
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
 
     this.add
       .text(240, 28, "냥포차", {
@@ -122,7 +126,7 @@ export class MenuScene extends Phaser.Scene {
       const muted = this.effects?.toggleMute() ?? false;
       muteText.setText(muted ? "소리 끔" : "소리 켬");
       if (save !== null) {
-        this.saveSystem.save({ ...save, muted, settings: { ...save.settings, muted } });
+        this.saveSystem.save({ ...save, muted, settings: { ...save.settings, ...this.effects?.settings, muted } });
       }
     });
 
@@ -131,6 +135,7 @@ export class MenuScene extends Phaser.Scene {
     keyboard?.once("keydown-N", () => this.confirmNewGame(primaryButton));
     const removeTouchAction = touchInput.subscribe("action", primaryAction);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
       removeTouchAction();
       touchInput.resetDirections();
       this.effects?.dispose();
@@ -192,7 +197,11 @@ export class MenuScene extends Phaser.Scene {
     void this.effects?.unlock();
     this.cameras.main.fadeOut(260, 8, 11, 25);
     this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => {
-      this.scene.start("GameScene", { newGame, muted: this.effects?.isMuted ?? false });
+      this.scene.start("GameScene", {
+        newGame,
+        muted: this.effects?.isMuted ?? false,
+        audioSettings: this.effects?.settings,
+      });
     });
   }
 

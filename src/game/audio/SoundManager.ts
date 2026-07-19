@@ -1,4 +1,4 @@
-import type { VisualPhase } from "../types/game";
+import type { GameSettings, VisualPhase } from "../types/game";
 import { getMusicPlaylist, type MusicContext } from "./musicTracks";
 
 export const SOUND_EFFECTS = [
@@ -12,6 +12,23 @@ export const SOUND_EFFECTS = [
 ] as const;
 
 export type SoundEffect = (typeof SOUND_EFFECTS)[number];
+
+export type SoundSettings = Pick<
+  GameSettings,
+  "masterVolume" | "musicVolume" | "sfxVolume" | "muted" | "musicMuted" | "sfxMuted"
+>;
+
+const DEFAULT_SOUND_SETTINGS: SoundSettings = {
+  masterVolume: 1,
+  musicVolume: 0.55,
+  sfxVolume: 0.8,
+  muted: false,
+  musicMuted: false,
+  sfxMuted: false,
+};
+
+const MUSIC_OUTPUT_SCALE = 0.33;
+const SFX_OUTPUT_SCALE = 0.5625;
 
 interface Tone {
   readonly frequency: number;
@@ -66,6 +83,11 @@ export class SoundManager {
   private context: AudioContext | null = null;
   private masterGain: GainNode | null = null;
   private muted: boolean;
+  private musicMuted: boolean;
+  private sfxMuted: boolean;
+  private masterVolume: number;
+  private musicVolume: number;
+  private sfxVolume: number;
   private disposed = false;
   private ambienceOscillator: OscillatorNode | null = null;
   private ambienceGain: GainNode | null = null;
@@ -74,9 +96,23 @@ export class SoundManager {
   private musicContext?: MusicContext;
   private musicTrackIndex = 0;
   private musicPaused = false;
+  private feverActive = false;
+  private feverTone: OscillatorNode | null = null;
+  private feverPulse: OscillatorNode | null = null;
+  private feverPulseDepth: GainNode | null = null;
+  private feverPulseGain: GainNode | null = null;
+  private feverOutputGain: GainNode | null = null;
 
-  public constructor(initialMuted = false) {
-    this.muted = initialMuted;
+  public constructor(initial: boolean | Partial<SoundSettings> = false) {
+    const settings = typeof initial === "boolean"
+      ? { ...DEFAULT_SOUND_SETTINGS, muted: initial }
+      : { ...DEFAULT_SOUND_SETTINGS, ...initial };
+    this.muted = settings.muted;
+    this.musicMuted = settings.musicMuted;
+    this.sfxMuted = settings.sfxMuted;
+    this.masterVolume = clampVolume(settings.masterVolume);
+    this.musicVolume = clampVolume(settings.musicVolume);
+    this.sfxVolume = clampVolume(settings.sfxVolume);
   }
 
   public get isMuted(): boolean {
@@ -85,22 +121,53 @@ export class SoundManager {
 
   public setMuted(muted: boolean): void {
     this.muted = muted;
-    if (this.music !== undefined) {
-      this.music.volume = muted ? 0 : 0.18;
-      if (!muted) void this.playMusic();
-    }
-
-    if (this.masterGain !== null && this.context !== null) {
-      const now = this.context.currentTime;
-      const nextVolume = muted ? 0 : 0.45;
-      this.masterGain.gain.cancelScheduledValues(now);
-      this.masterGain.gain.setTargetAtTime(nextVolume, now, 0.01);
-    }
+    this.applyOutputLevels();
+    if (!muted) void this.playMusic();
   }
 
   public toggleMute(): boolean {
     this.setMuted(!this.muted);
     return this.muted;
+  }
+
+  public get settings(): SoundSettings {
+    return {
+      masterVolume: this.masterVolume,
+      musicVolume: this.musicVolume,
+      sfxVolume: this.sfxVolume,
+      muted: this.muted,
+      musicMuted: this.musicMuted,
+      sfxMuted: this.sfxMuted,
+    };
+  }
+
+  public setMasterVolume(volume: number): void {
+    this.masterVolume = clampVolume(volume);
+    this.applyOutputLevels();
+  }
+
+  public setMusicVolume(volume: number): void {
+    this.musicVolume = clampVolume(volume);
+    this.applyOutputLevels();
+    if (!this.musicMuted && this.musicVolume > 0) void this.playMusic();
+  }
+
+  public setSfxVolume(volume: number): void {
+    this.sfxVolume = clampVolume(volume);
+    this.applyOutputLevels();
+  }
+
+  public toggleMusicMute(): boolean {
+    this.musicMuted = !this.musicMuted;
+    this.applyOutputLevels();
+    if (!this.musicMuted) void this.playMusic();
+    return this.musicMuted;
+  }
+
+  public toggleSfxMute(): boolean {
+    this.sfxMuted = !this.sfxMuted;
+    this.applyOutputLevels();
+    return this.sfxMuted;
   }
 
   /**
@@ -126,7 +193,7 @@ export class SoundManager {
   }
 
   public play(effect: SoundEffect): void {
-    if (this.muted || this.disposed) {
+    if (this.muted || this.sfxMuted || this.sfxVolume <= 0 || this.disposed) {
       return;
     }
 
@@ -208,7 +275,11 @@ export class SoundManager {
     this.ambienceOscillator.frequency.cancelScheduledValues(now);
     this.ambienceOscillator.frequency.setTargetAtTime(frequencies[phase], now, reducedMotion ? 0.04 : 0.35);
     this.ambienceGain.gain.cancelScheduledValues(now);
-    this.ambienceGain.gain.setTargetAtTime(this.muted ? 0.0001 : 0.012, now, reducedMotion ? 0.03 : 0.25);
+    this.ambienceGain.gain.setTargetAtTime(
+      this.muted || this.sfxMuted || this.sfxVolume <= 0 ? 0.0001 : 0.012,
+      now,
+      reducedMotion ? 0.03 : 0.25,
+    );
   }
 
   public setMenuMusic(): void {
@@ -218,8 +289,45 @@ export class SoundManager {
   public setMusicPaused(paused: boolean): void {
     if (this.musicPaused === paused) return;
     this.musicPaused = paused;
-    if (paused) this.music?.pause();
-    else void this.playMusic();
+    if (paused) {
+      this.music?.pause();
+      if (this.context?.state === "running") void this.context.suspend().catch(() => undefined);
+    } else {
+      if (this.context?.state === "suspended") void this.context.resume().catch(() => undefined);
+      void this.playMusic();
+    }
+  }
+
+  public setFeverActive(active: boolean): void {
+    if (this.feverActive === active) return;
+    this.feverActive = active;
+    if (this.music !== undefined) this.music.playbackRate = 1;
+    if (active) this.startFeverLayer();
+    else this.stopFeverLayer();
+  }
+
+  public getMusicPlaybackRate(): number {
+    return this.music?.playbackRate ?? 1;
+  }
+
+  public get diagnostics(): {
+    readonly context?: MusicContext;
+    readonly trackIndex: number;
+    readonly paused: boolean;
+    readonly feverLayerActive: boolean;
+    readonly playbackRate: number;
+    readonly currentTimeSeconds: number;
+    readonly settings: SoundSettings;
+  } {
+    return {
+      context: this.musicContext,
+      trackIndex: this.musicTrackIndex,
+      paused: this.musicPaused,
+      feverLayerActive: this.feverTone !== null,
+      playbackRate: this.getMusicPlaybackRate(),
+      currentTimeSeconds: this.music?.currentTime ?? 0,
+      settings: this.settings,
+    };
   }
 
   public dispose(): void {
@@ -237,6 +345,7 @@ export class SoundManager {
     this.ambienceGain?.disconnect();
     this.ambienceOscillator = null;
     this.ambienceGain = null;
+    this.stopFeverLayer();
     if (this.music !== undefined) {
       this.music.pause();
       this.music.removeAttribute("src");
@@ -269,7 +378,7 @@ export class SoundManager {
     try {
       const context = new window.AudioContext();
       const masterGain = context.createGain();
-      masterGain.gain.value = this.muted ? 0 : 0.45;
+      masterGain.gain.value = this.getSfxOutputLevel();
       masterGain.connect(context.destination);
       this.context = context;
       this.masterGain = masterGain;
@@ -331,13 +440,22 @@ export class SoundManager {
     if (this.music !== undefined) return this.music;
     const music = new Audio();
     music.preload = "metadata";
-    music.volume = this.muted ? 0 : 0.18;
+    music.volume = this.getMusicOutputLevel();
+    music.playbackRate = 1;
     this.music = music;
     return music;
   }
 
   private async playMusic(): Promise<void> {
-    if (this.muted || this.musicPaused || this.disposed || this.musicContext === undefined) return;
+    if (
+      this.muted
+      || this.musicMuted
+      || this.musicVolume <= 0
+      || this.masterVolume <= 0
+      || this.musicPaused
+      || this.disposed
+      || this.musicContext === undefined
+    ) return;
     const music = this.getOrCreateMusic();
     if (music === undefined || music.src.length === 0) return;
     try {
@@ -346,6 +464,86 @@ export class SoundManager {
       // Retry after the next user gesture when autoplay is restricted.
     }
   }
+
+  private getMusicOutputLevel(): number {
+    return this.muted || this.musicMuted
+      ? 0
+      : clampVolume(this.masterVolume * this.musicVolume * MUSIC_OUTPUT_SCALE);
+  }
+
+  private getSfxOutputLevel(): number {
+    return this.muted || this.sfxMuted
+      ? 0
+      : clampVolume(this.masterVolume * this.sfxVolume * SFX_OUTPUT_SCALE);
+  }
+
+  private applyOutputLevels(): void {
+    if (this.music !== undefined) this.music.volume = this.getMusicOutputLevel();
+    if (this.feverOutputGain !== null && this.context !== null) {
+      const now = this.context.currentTime;
+      this.feverOutputGain.gain.cancelScheduledValues(now);
+      this.feverOutputGain.gain.setTargetAtTime(this.getMusicOutputLevel() * 0.06, now, 0.02);
+    }
+    if (this.masterGain !== null && this.context !== null) {
+      const now = this.context.currentTime;
+      this.masterGain.gain.cancelScheduledValues(now);
+      this.masterGain.gain.setTargetAtTime(this.getSfxOutputLevel(), now, 0.01);
+    }
+  }
+
+  private startFeverLayer(): void {
+    if (this.feverTone !== null || this.disposed) return;
+    const context = this.getOrCreateContext();
+    if (context === null) return;
+    const tone = context.createOscillator();
+    const pulse = context.createOscillator();
+    const pulseDepth = context.createGain();
+    const pulseGain = context.createGain();
+    const output = context.createGain();
+    tone.type = "triangle";
+    tone.frequency.value = 110;
+    pulse.type = "sine";
+    pulse.frequency.value = 3.2;
+    pulseDepth.gain.value = 0.42;
+    pulseGain.gain.value = 0.55;
+    output.gain.value = this.getMusicOutputLevel() * 0.06;
+    tone.connect(pulseGain);
+    pulse.connect(pulseDepth);
+    pulseDepth.connect(pulseGain.gain);
+    pulseGain.connect(output);
+    output.connect(context.destination);
+    tone.start();
+    pulse.start();
+    this.feverTone = tone;
+    this.feverPulse = pulse;
+    this.feverPulseDepth = pulseDepth;
+    this.feverPulseGain = pulseGain;
+    this.feverOutputGain = output;
+  }
+
+  private stopFeverLayer(): void {
+    try {
+      this.feverTone?.stop();
+      this.feverPulse?.stop();
+    } catch {
+      // The nodes may already be stopped during scene disposal.
+    }
+    this.feverTone?.disconnect();
+    this.feverPulse?.disconnect();
+    this.feverPulseDepth?.disconnect();
+    this.feverPulseGain?.disconnect();
+    this.feverOutputGain?.disconnect();
+    this.feverTone = null;
+    this.feverPulse = null;
+    this.feverPulseDepth = null;
+    this.feverPulseGain = null;
+    this.feverOutputGain = null;
+  }
+}
+
+function clampVolume(volume: number): number {
+  if (!Number.isFinite(volume)) return 0;
+  return Math.round(Math.max(0, Math.min(1, volume)) * 100) / 100;
 }
 
 export default SoundManager;

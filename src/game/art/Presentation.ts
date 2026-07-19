@@ -9,6 +9,10 @@ export const TEXT_RESOLUTION = RENDER_SCALE;
 
 export function shouldUseMobilePowerProfile(): boolean {
   if (typeof window === "undefined" || typeof navigator === "undefined") return false;
+  if (
+    new URLSearchParams(window.location.search).has("debug")
+    && new URLSearchParams(window.location.search).has("mobilePower")
+  ) return true;
   return navigator.maxTouchPoints > 0
     || window.matchMedia?.("(pointer: coarse)").matches === true;
 }
