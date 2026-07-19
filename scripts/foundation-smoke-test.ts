@@ -7,16 +7,25 @@ import {
   getWorktopUpgradeCost,
 } from "../src/game/economy/economyMath";
 import { DayNightController } from "../src/game/systems/DayNightController";
+import { MUSIC_WORLD_CYCLE_MS } from "../src/game/data/musicSchedule";
 import { EconomySystem } from "../src/game/systems/EconomySystem";
 import { ProgressionSystem } from "../src/game/systems/ProgressionSystem";
 import { calculateOfflineReward } from "../src/game/systems/OfflineEarningsSystem";
 import {
+  calculateOrderPatienceMs,
   canSpawnCustomer,
   CUSTOMER_ARRIVAL_INTERVAL_MULTIPLIER,
   MAX_WAITING_CUSTOMERS,
   selectFoodRecipient,
 } from "../src/game/systems/ServiceFlowRules";
 import { TouchInputState } from "../src/game/input/TouchControls";
+import { canStartCookingTicket } from "../src/game/systems/CookingFlowRules";
+import { CustomizationSystem } from "../src/game/systems/CustomizationSystem";
+import {
+  getStageConfig,
+  TOTAL_TARGET_ACTIVE_SECONDS,
+  WORKER_HIRE_CONFIGS,
+} from "../src/game/data/progressionData";
 import {
   DEFAULT_SAVE_KEY,
   SAVE_DATA_VERSION,
@@ -64,13 +73,53 @@ assert.equal(getMenuPrice(100, 10), 417);
 assert.equal(getCookingTimeMs(10_000, 100), 3_500, "cooking speed must respect its floor");
 assert.equal(getCookingTimeMs(10_000, 0, 1, 3), 23_000);
 assert.equal(formatCompactNumber(1_250_000), "1.25M");
+const cosmeticEconomy = new EconomySystem({ money: 500 });
+const cosmetics = new CustomizationSystem();
+assert.equal(cosmetics.purchaseOrEquip("peach", cosmeticEconomy), "purchased");
+assert.equal(cosmetics.getSelected().id, "peach");
+assert.equal(cosmeticEconomy.getMoney(), 0);
+const facilityEconomy = new EconomySystem({ money: 2_000 });
+assert.equal(cosmetics.purchaseFacility("copper-pot", facilityEconomy), "purchased");
+assert.equal(cosmetics.getFacilityEffects().cookingTimeMultiplier, 0.9);
+assert.equal(facilityEconomy.getMoney(), 0);
+const chefOneTicket = {
+  customerId: "cook-a",
+  menuItemId: "tteokbokki" as const,
+  quantity: 1,
+  chefWorkerId: "chef-1",
+};
+const chefTwoTicket = { ...chefOneTicket, customerId: "cook-b", chefWorkerId: "chef-2" };
+assert.equal(canStartCookingTicket(chefTwoTicket, [chefOneTicket], 2), true);
+assert.equal(
+  canStartCookingTicket({ ...chefOneTicket, customerId: "cook-c" }, [chefOneTicket], 2),
+  false,
+  "one chef must not occupy two simultaneous cooking slots",
+);
+assert.equal(
+  canStartCookingTicket(chefTwoTicket, [chefOneTicket], 1),
+  false,
+  "the kitchen-wide cooking-slot cap must be enforced",
+);
+assert.equal(getStageConfig(6).targetDurationSeconds, 204);
+assert.equal(getStageConfig(11).targetDurationSeconds, 336);
+assert.equal(getStageConfig(30).targetDurationSeconds, 2_520);
+assert.equal(TOTAL_TARGET_ACTIVE_SECONDS, 16_218);
+assert.equal(
+  WORKER_HIRE_CONFIGS.find((worker) => worker.role === "server" && worker.ordinal === 1)?.cost,
+  10_000,
+);
 
 const clock = new DayNightController();
 assert.equal(clock.getState().phase, "day");
-assert.equal(clock.setClock(180_000).phase, "sunset");
-assert.equal(clock.setClock(270_000).phase, "night");
-assert.equal(clock.setClock(540_000).phase, "dawn");
-assert.equal(clock.setClock(600_000).phase, "day");
+assert.equal(clock.getState().phaseTrackIndex, 0);
+assert.equal(clock.setClock(171_814).phase, "sunset");
+assert.equal(clock.setClock(292_565).phase, "night");
+assert.equal(clock.setClock(407_076).phase, "dawn");
+assert.equal(clock.setClock(503_239).phase, "day");
+assert.equal(clock.getState().phaseTrackIndex, 1);
+assert.equal(clock.getState().musicLoopIndex, 1);
+assert.equal(clock.setClock(MUSIC_WORLD_CYCLE_MS).phase, "day");
+assert.equal(clock.getState().musicLoopIndex, 0);
 
 const progressionEconomy = new EconomySystem({ money: 10_000 });
 const progression = new ProgressionSystem(progressionEconomy);
@@ -84,12 +133,21 @@ assert.ok(progression.getMenuPrice("fishcake") > 18);
 progression.debugGrantThroughStage(8);
 assert.deepEqual(progression.getEffects().unlockedMenuIds, ["fishcake", "tteokbokki"]);
 assert.equal(progression.getEffects().serverCount, 1);
+assert.ok(
+  (progression.getState().menuProgress.find((menu) => menu.menuItemId === "tteokbokki")?.speedLevel ?? 0) >= 1,
+  "new menus must open with one speed level so their first orders do not feel stalled",
+);
 progression.debugGrantThroughStage(10);
 assert.equal(progression.getFeverState().level, 1);
 assert.equal(progression.addFeverGauge(100).activated, true);
 assert.equal(progression.getFeverRevenueMultiplier(), 1.5);
 progression.updateFever(15_000);
 assert.equal(progression.getFeverRevenueMultiplier(), 1);
+progression.debugGrantThroughStage(13);
+assert.equal(progression.getEffects().chefCount, 2);
+assert.equal(progression.getEffects().cookingSlotCount, 2);
+assert.equal(progression.getEffects().fameLevel, 3);
+assert.equal(progression.getEffects().fameRevenueMultiplier, 1.04);
 progression.debugGrantThroughStage(30);
 assert.equal(progression.getEffects().seatCount, 14);
 assert.equal(progression.getEffects().unlockedMenuIds.length, 6);
@@ -108,6 +166,7 @@ const serviceCustomers = [
     customerState: CustomerState.WAITING_FOR_FOOD,
     orderId: "fishcake" as const,
     orderQuantity: 1,
+    remainingQuantity: 1,
     patienceMs: 20_000,
     maxPatienceMs: 30_000,
     x: 10,
@@ -118,6 +177,7 @@ const serviceCustomers = [
     customerState: CustomerState.WAITING_FOR_FOOD,
     orderId: "fishcake" as const,
     orderQuantity: 1,
+    remainingQuantity: 1,
     patienceMs: 5_000,
     maxPatienceMs: 30_000,
     x: 100,
@@ -141,7 +201,29 @@ assert.equal(
 assert.equal(
   selectFoodRecipient(serviceCustomers, { menuItemId: "fishcake", quantity: 2 }),
   undefined,
-  "orders with different quantities must not be treated as interchangeable",
+  "one customer cannot receive more servings than remain on the order",
+);
+assert.equal(
+  selectFoodRecipient(
+    [{ ...serviceCustomers[0], customerId: "multi", orderQuantity: 2, remainingQuantity: 2 }],
+    { menuItemId: "fishcake", quantity: 1 },
+  )?.customerId,
+  "multi",
+  "multi-item orders must accept one freely assigned serving at a time",
+);
+assert.equal(
+  selectFoodRecipient(
+    [{ ...serviceCustomers[0], customerId: "complete", orderQuantity: 2, remainingQuantity: 0 }],
+    { menuItemId: "fishcake", quantity: 1 },
+  ),
+  undefined,
+  "completed multi-item orders must reject duplicate servings",
+);
+assert.equal(calculateOrderPatienceMs(24_000, 10_000, 1), 31_000);
+assert.equal(
+  calculateOrderPatienceMs(24_000, 16_500, 2),
+  44_400,
+  "patience must cover batch cooking time and extra servings",
 );
 assert.equal(MAX_WAITING_CUSTOMERS, 2);
 assert.equal(CUSTOMER_ARRIVAL_INTERVAL_MULTIPLIER, 1.12);

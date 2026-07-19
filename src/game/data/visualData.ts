@@ -1,6 +1,7 @@
 import type { GrowthStage, VisualPhase, VisualTier } from "../types/game";
+import { MUSIC_PHASE_SLOTS, MUSIC_WORLD_CYCLE_MS } from "./musicSchedule";
 
-export const WORLD_CYCLE_MS = 10 * 60 * 1_000;
+export const WORLD_CYCLE_MS = MUSIC_WORLD_CYCLE_MS;
 export const VISUAL_CROSSFADE_MS = 8_000;
 
 export interface VisualPhaseTiming {
@@ -20,12 +21,12 @@ export interface VisualPalette {
   readonly reflection: number;
 }
 
-export const VISUAL_PHASE_TIMINGS: readonly VisualPhaseTiming[] = [
-  { phase: "day", startMs: 0, endMs: 3 * 60 * 1_000 },
-  { phase: "sunset", startMs: 3 * 60 * 1_000, endMs: 4.5 * 60 * 1_000 },
-  { phase: "night", startMs: 4.5 * 60 * 1_000, endMs: 9 * 60 * 1_000 },
-  { phase: "dawn", startMs: 9 * 60 * 1_000, endMs: WORLD_CYCLE_MS },
-];
+let phaseCursorMs = 0;
+export const VISUAL_PHASE_TIMINGS: readonly VisualPhaseTiming[] = MUSIC_PHASE_SLOTS.map((slot) => {
+  const timing = { phase: slot.phase, startMs: phaseCursorMs, endMs: phaseCursorMs + slot.durationMs };
+  phaseCursorMs = timing.endMs;
+  return timing;
+});
 
 export const VISUAL_PALETTES: Readonly<Record<VisualPhase, VisualPalette>> = {
   day: {

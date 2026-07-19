@@ -2,6 +2,7 @@ import {
   VISUAL_PHASE_TIMINGS,
   WORLD_CYCLE_MS,
 } from "../data/visualData";
+import { MUSIC_PHASE_SLOTS } from "../data/musicSchedule";
 import type {
   VisualPhase,
   VisualTier,
@@ -39,12 +40,18 @@ export class DayNightController {
       throw new Error("Visual phase cycle is incomplete.");
     }
     const duration = timing.endMs - timing.startMs;
+    const slot = MUSIC_PHASE_SLOTS[safeIndex] ?? MUSIC_PHASE_SLOTS[0];
+    if (slot === undefined) throw new Error("Music phase schedule is empty.");
+    const phaseElapsedMs = this.worldClockMs - timing.startMs;
     return {
       worldClockMs: this.worldClockMs,
       phase: timing.phase,
       nextPhase: nextTiming.phase,
-      phaseProgress: duration <= 0 ? 1 : (this.worldClockMs - timing.startMs) / duration,
+      phaseProgress: duration <= 0 ? 1 : phaseElapsedMs / duration,
       phaseRemainingMs: timing.endMs - this.worldClockMs,
+      phaseTrackIndex: slot.trackIndex,
+      phaseElapsedMs,
+      musicLoopIndex: Math.floor(safeIndex / 4),
       visualTier: this.visualTier,
     };
   }

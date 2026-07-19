@@ -14,6 +14,7 @@ export interface DinerDecor {
   setPhase(phase: VisualPhase, immediate?: boolean): void;
   setVisualTier(tier: VisualTier): void;
   setProgression(stage: GrowthStage, purchasedStepCount: number): void;
+  setShopTier(tier: number): void;
   setReducedMotion(reducedMotion: boolean): void;
   celebrate(): void;
 }
@@ -41,6 +42,7 @@ export function createGameBackdrop(scene: Phaser.Scene): DinerDecor {
   let visualTier: VisualTier = 1;
   let currentStage: GrowthStage = 1;
   let purchasedStepCount = 0;
+  let shopTier = 0;
   const facilityDetails = scene.add.graphics().setDepth(6);
 
   const renderFacilityDetails = (): void => {
@@ -86,6 +88,18 @@ export function createGameBackdrop(scene: Phaser.Scene): DinerDecor {
       facilityDetails.fillStyle(night ? 0xffe077 : 0xf4b45f, 0.9);
       facilityDetails.fillCircle(147, 49, 2);
       facilityDetails.fillCircle(203, 49, 2);
+    }
+    if (shopTier >= 1) {
+      facilityDetails.fillStyle(0xd78345, 0.95).fillCircle(31, 91, 5);
+    }
+    if (shopTier >= 2) {
+      facilityDetails.fillStyle(0x8f5d79, 0.9).fillRect(106, 190, 28, 3);
+    }
+    if (shopTier >= 3) {
+      facilityDetails.fillStyle(0xc88b55, 0.95).fillRect(150, 181, 50, 4);
+    }
+    if (shopTier >= 4) {
+      facilityDetails.lineStyle(2, night ? 0x45ffd2 : 0xe5ad68, 0.95).strokeRoundedRect(287, 68, 47, 18, 4);
     }
   };
 
@@ -151,6 +165,10 @@ export function createGameBackdrop(scene: Phaser.Scene): DinerDecor {
     setProgression(stage, steps): void {
       currentStage = stage;
       purchasedStepCount = steps;
+      renderFacilityDetails();
+    },
+    setShopTier(tier): void {
+      shopTier = Math.max(0, Math.min(4, Math.floor(tier)));
       renderFacilityDetails();
     },
     setReducedMotion(reducedMotion): void {

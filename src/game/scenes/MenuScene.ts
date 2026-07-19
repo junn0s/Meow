@@ -23,6 +23,7 @@ export class MenuScene extends Phaser.Scene {
       || window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
     createMenuBackdrop(this, reducedMotion);
     this.effects = new SoundManager(save?.muted ?? false);
+    this.effects.setMenuMusic();
 
     this.add
       .text(240, 28, "냥포차", {
@@ -66,6 +67,7 @@ export class MenuScene extends Phaser.Scene {
     const hasSave = save !== null;
     const continueLabel = save?.cleared === true ? "완성 기록 보기" : hasSave ? "이어하기" : "영업 시작";
     const primaryAction = (): void => {
+      void this.effects?.unlock();
       if (save?.cleared === true) {
           this.openResult(
             save.money,

@@ -129,6 +129,11 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     }
   }
 
+  public setOwnerTint(tint: number): void {
+    if (tint === 0xffffff) this.clearTint();
+    else this.setTint(tint);
+  }
+
   public override destroy(fromScene?: boolean): void {
     this.carriedSprite?.destroy();
     super.destroy(fromScene);

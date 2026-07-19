@@ -15,7 +15,10 @@ import { DayNightController } from "../systems/DayNightController";
 import { ProgressionSystem } from "../systems/ProgressionSystem";
 import { calculateOfflineReward } from "../systems/OfflineEarningsSystem";
 import { SaveSystem } from "../systems/SaveSystem";
+import { canStartCookingTicket } from "../systems/CookingFlowRules";
+import { CustomizationSystem, FACILITY_UPGRADES, OWNER_STYLES } from "../systems/CustomizationSystem";
 import {
+  calculateOrderPatienceMs,
   canReceiveFood,
   canSpawnCustomer,
   CUSTOMER_ARRIVAL_INTERVAL_MULTIPLIER,
@@ -34,7 +37,12 @@ import { HUD } from "../../ui/HUD";
 import { PixelButton } from "../../ui/PixelButton";
 import { ToastManager } from "../../ui/ToastManager";
 import { UpgradePanel } from "../../ui/UpgradePanel";
-import { configureHighDefinitionScene, LOGICAL_HEIGHT, LOGICAL_WIDTH } from "../art/Presentation";
+import {
+  configureHighDefinitionScene,
+  LOGICAL_HEIGHT,
+  LOGICAL_WIDTH,
+  shouldUseMobilePowerProfile,
+} from "../art/Presentation";
 import { touchInput } from "../input/TouchControls";
 
 export interface GameSceneData {
@@ -81,6 +89,14 @@ const TABLE_POSITIONS = [
   { x: 35, y: 142 }, { x: 105, y: 142 }, { x: 175, y: 142 }, { x: 245, y: 142 }, { x: 315, y: 142 },
   { x: 35, y: 187 }, { x: 105, y: 187 }, { x: 175, y: 187 }, { x: 245, y: 187 }, { x: 315, y: 187 },
   { x: 70, y: 232 }, { x: 140, y: 232 }, { x: 210, y: 232 }, { x: 280, y: 232 },
+  { x: 350, y: 232 },
+] as const;
+
+const SERVER_HOME_POSITIONS = [
+  { x: 316, y: 124 },
+  { x: 275, y: 124 },
+  { x: 234, y: 124 },
+  { x: 193, y: 124 },
 ] as const;
 
 const AUTO_ORDER_DELAY_MS = 720;
@@ -120,6 +136,8 @@ export class GameScene extends Phaser.Scene {
   private currentInteraction?: InteractionTarget;
   private isPaused = false;
   private pauseOverlay?: Phaser.GameObjects.Container;
+  private shopOverlay?: Phaser.GameObjects.Container;
+  private readonly customization = new CustomizationSystem();
   private tutorialOverlay?: Phaser.GameObjects.Container;
   private tutorialStep = 0;
   private tutorialCompleted = false;
@@ -189,7 +207,12 @@ export class GameScene extends Phaser.Scene {
       this.currentSave.visualTier,
     );
     this.decor = createGameBackdrop(this);
-    this.atmosphere = new AtmosphereSystem(this, this.reducedMotion);
+    this.decor.setShopTier(this.customization.getFacilityEffects().visualTier);
+    this.atmosphere = new AtmosphereSystem(
+      this,
+      this.reducedMotion,
+      shouldUseMobilePowerProfile(),
+    );
     const initialVisualState = this.dayNight.getState();
     this.currentVisualPhase = initialVisualState.phase;
     this.decor.setVisualTier(initialVisualState.visualTier);
@@ -198,7 +221,7 @@ export class GameScene extends Phaser.Scene {
     this.atmosphere.setVisualTier(initialVisualState.visualTier);
     this.atmosphere.setPhase(initialVisualState.phase, true);
     this.atmosphere.setWorkerCounts(this.currentEffects.chefCount, this.currentEffects.serverCount);
-    this.sfx.setAmbience(initialVisualState.phase, this.reducedMotion);
+    this.sfx.setAmbience(initialVisualState.phase, this.reducedMotion, initialVisualState.phaseTrackIndex, initialVisualState.phaseElapsedMs);
     const progressionState = this.progression.getState();
     this.decor.setProgression(
       progressionState.currentStage,
@@ -206,14 +229,20 @@ export class GameScene extends Phaser.Scene {
     );
 
     this.createStations();
-    this.createTables(this.currentEffects.seatCount);
+    this.createTables(this.currentEffects.seatCount + this.customization.getFacilityEffects().bonusSeats);
     this.player = new Player(this, 176, 128);
+    this.player.setOwnerTint(this.customization.getSelected().tint);
     this.createWorkers();
     this.applyEffects(this.currentEffects, false);
     this.hud = new HUD(this);
     this.hud.setWorldTime(initialVisualState);
     this.upgradePanel = new UpgradePanel(this);
     this.toast = new ToastManager(this);
+    new PixelButton(this, 325, 47, "상점", () => {
+      if (this.tutorialOverlay !== undefined || this.clearing) return;
+      if (!this.isPaused) this.openPauseOverlay();
+      this.openStyleShop();
+    }, { width: 44, height: 18, primary: false, fontSize: 7 }).setDepth(920);
     this.createInteractionIndicator();
     this.createInputHandlers();
     this.createSubscriptions();
@@ -236,6 +265,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.game.events.on("app-before-unload", this.saveProgress, this);
+    this.game.events.on("app-visibility-change", this.handleAppVisibilityChange, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.handleShutdown, this);
     this.cameras.main.fadeIn(260, 8, 11, 25);
   }
@@ -246,8 +276,10 @@ export class GameScene extends Phaser.Scene {
     if (this.frameSamples.length > 120) this.frameSamples.shift();
     this.hud.update(stepMs);
     if (this.isPaused || this.tutorialOverlay !== undefined || this.clearing) {
+      this.sfx.setMusicPaused(true);
       return;
     }
+    this.sfx.setMusicPaused(false);
 
     this.elapsedMs += stepMs;
     this.hud.setElapsedTime(this.elapsedMs);
@@ -256,7 +288,7 @@ export class GameScene extends Phaser.Scene {
       this.currentVisualPhase = visualState.phase;
       this.decor.setPhase(visualState.phase);
       this.atmosphere.setPhase(visualState.phase);
-      this.sfx.setAmbience(visualState.phase, this.reducedMotion);
+      this.sfx.setAmbience(visualState.phase, this.reducedMotion, visualState.phaseTrackIndex, visualState.phaseElapsedMs);
       for (const customer of this.customers.values()) {
         customer.setNightMode(visualState.phase === "night");
       }
@@ -297,6 +329,7 @@ export class GameScene extends Phaser.Scene {
     this.workerAnimationFrame = 0;
     this.isPaused = false;
     this.pauseOverlay = undefined;
+    this.shopOverlay = undefined;
     this.tutorialOverlay = undefined;
     this.tutorialStep = 0;
     this.clearing = false;
@@ -329,17 +362,22 @@ export class GameScene extends Phaser.Scene {
       const station = new CookingStation(this, definition.menuItemId, definition.x, 84);
       station.setReadyCallback((_readyStation, ticket) => {
         this.ticketStats.completed += 1;
-        if (ticket.chefWorkerId !== undefined) this.releaseChef(ticket.chefWorkerId);
+        if (ticket.chefWorkerId !== undefined) this.releaseChefIfCookingComplete(ticket.chefWorkerId);
         this.sfx.ready();
         setStatus(`${getMenuItem(definition.menuItemId).name} 조리가 완료됐습니다.`);
       });
       station.setCookingTimeResolver((quantity) =>
-        this.progression.getMenuCookingTimeMs(definition.menuItemId, quantity));
-      station.setCanStartNextResolver(() => {
-        const activeCount = [...this.stations.values()].filter(
-          (candidate) => candidate.getActiveTicket() !== undefined,
-        ).length;
-        return activeCount < Math.max(1, this.currentEffects.chefCount);
+        this.progression.getMenuCookingTimeMs(definition.menuItemId, quantity)
+          * this.customization.getFacilityEffects().cookingTimeMultiplier);
+      station.setCanStartNextResolver((ticket) => {
+        const activeTickets = [...this.stations.values()].flatMap(
+          (candidate) => [...candidate.getActiveTickets()],
+        );
+        return canStartCookingTicket(
+          ticket,
+          activeTickets,
+          this.currentEffects.cookingSlotCount,
+        );
       });
       this.stations.set(definition.menuItemId, station);
     }
@@ -378,8 +416,9 @@ export class GameScene extends Phaser.Scene {
         homeY: chefY,
         busy: false,
       });
-      const serverX = 335;
-      const serverY = 105 + ordinal * 29;
+      const serverHome = SERVER_HOME_POSITIONS[ordinal - 1] ?? SERVER_HOME_POSITIONS[0];
+      const serverX = serverHome.x;
+      const serverY = serverHome.y;
       this.servers.push({
         id: `server-${ordinal}`,
         role: "server",
@@ -446,7 +485,8 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
-    if (canSpawnCustomer(this.customers.values(), this.currentEffects.seatCount)) {
+    const seatCount = this.currentEffects.seatCount + this.customization.getFacilityEffects().bonusSeats;
+    if (canSpawnCustomer(this.customers.values(), seatCount)) {
       this.spawnCustomer();
       return;
     }
@@ -483,7 +523,8 @@ export class GameScene extends Phaser.Scene {
       231,
       {
         patienceMs: Math.round(
-          stageConfig.basePatienceMs * kindPatienceMultiplier * (vip ? 1.25 : 1),
+          stageConfig.basePatienceMs * kindPatienceMultiplier * (vip ? 1.25 : 1)
+            * this.customization.getFacilityEffects().patienceMultiplier,
         ),
         vip,
         nightMode: this.currentVisualPhase === "night",
@@ -638,7 +679,7 @@ export class GameScene extends Phaser.Scene {
       const cancelledTickets = station.cancelTicketsForCustomer(customer.customerId);
       this.ticketStats.cancelled += cancelledTickets.length;
       for (const ticket of cancelledTickets) {
-        if (ticket.chefWorkerId !== undefined) this.releaseChef(ticket.chefWorkerId);
+        if (ticket.chefWorkerId !== undefined) this.releaseChefIfCookingComplete(ticket.chefWorkerId);
       }
     }
     for (const chef of this.chefs) {
@@ -648,13 +689,14 @@ export class GameScene extends Phaser.Scene {
     if (
       carriedFood !== undefined
       && carriedFood === customer.orderId
-      && this.player.getCarriedQuantity() === customer.orderQuantity
+      && this.player.getCarriedTicketCustomerId() === customer.customerId
     ) {
+      const carriedQuantity = this.player.getCarriedQuantity();
       const excludedCustomerIds = new Set(this.serverTargetCustomerIds);
       excludedCustomerIds.add(customer.customerId);
       const alternative = selectFoodRecipient(
         this.customers.values(),
-        { menuItemId: carriedFood, quantity: this.player.getCarriedQuantity() },
+        { menuItemId: carriedFood, quantity: carriedQuantity },
         excludedCustomerIds,
         this.player,
       );
@@ -662,16 +704,21 @@ export class GameScene extends Phaser.Scene {
         this.player.clearCarriedFood();
         this.hud.setHeldFood();
         this.ticketStats.cancelled += 1;
-      } else if (this.player.getCarriedTicketCustomerId() === customer.customerId) {
+      } else {
         const station = this.stations.get(carriedFood);
-        const cancelledTickets = station?.cancelTicketsForCustomer(alternative.customerId) ?? [];
-        this.ticketStats.cancelled += cancelledTickets.length;
-        for (const ticket of cancelledTickets) {
-          if (ticket.chefWorkerId !== undefined) this.releaseChef(ticket.chefWorkerId);
+        const cancelledTicket = station?.cancelOneTicketForCustomer(
+          alternative.customerId,
+          carriedQuantity,
+        );
+        if (cancelledTicket !== undefined) {
+          this.ticketStats.cancelled += 1;
+          if (cancelledTicket.chefWorkerId !== undefined) {
+            this.releaseChefIfCookingComplete(cancelledTicket.chefWorkerId);
+          }
         }
         this.player.setCarriedFood(
           carriedFood,
-          this.player.getCarriedQuantity(),
+          carriedQuantity,
           alternative.customerId,
         );
       }
@@ -696,7 +743,14 @@ export class GameScene extends Phaser.Scene {
   private createCustomerOrder(customer: Customer): void {
     const menuItemId = this.pickMenuForCustomer(customer);
     const quantity = this.pickOrderQuantity(customer);
-    customer.placeOrder(menuItemId, quantity);
+    const cookingTimeMs = this.progression.getMenuCookingTimeMs(menuItemId, quantity)
+      * this.customization.getFacilityEffects().cookingTimeMultiplier;
+    const patienceBudgetMs = calculateOrderPatienceMs(
+      customer.patienceMs,
+      cookingTimeMs,
+      quantity,
+    ) * (customer.isVip ? 1.2 : 1);
+    customer.placeOrder(menuItemId, quantity, patienceBudgetMs);
     setStatus(`${getCustomerData(customer.kind).name} 손님이 ${getMenuItem(menuItemId).name}을 주문하려 합니다.`);
   }
 
@@ -752,15 +806,26 @@ export class GameScene extends Phaser.Scene {
     if (station === undefined || !station.isUnlocked()) {
       return false;
     }
-    const ticket: CookingTicket = {
-      customerId: customer.customerId,
-      menuItemId: customer.orderId,
-      quantity: customer.orderQuantity,
-      chefWorkerId,
-    };
+    const totalCookingTimeMs = this.progression.getMenuCookingTimeMs(
+      customer.orderId,
+      customer.orderQuantity,
+    ) * this.customization.getFacilityEffects().cookingTimeMultiplier;
+    const perServingCookingTimeMs = Math.max(
+      1,
+      Math.round(totalCookingTimeMs / customer.orderQuantity),
+    );
     customer.acceptOrder();
-    station.enqueue(ticket);
-    this.ticketStats.accepted += 1;
+    for (let serving = 1; serving <= customer.orderQuantity; serving += 1) {
+      const ticket: CookingTicket = {
+        customerId: customer.customerId,
+        menuItemId: customer.orderId,
+        quantity: 1,
+        cookingTimeMs: perServingCookingTimeMs,
+        chefWorkerId,
+      };
+      station.enqueue(ticket);
+      this.ticketStats.accepted += 1;
+    }
     this.sfx.click();
     if (automated) {
       const chef = this.chefs.find((worker) => worker.id === chefWorkerId);
@@ -948,25 +1013,40 @@ export class GameScene extends Phaser.Scene {
           servedTicket.quantity,
         );
       } else {
-        const cancelledTickets = station?.cancelTicketsForCustomer(customer.customerId) ?? [];
-        this.ticketStats.cancelled += cancelledTickets.length;
-        for (const ticket of cancelledTickets) {
-          if (ticket.chefWorkerId !== undefined) this.releaseChef(ticket.chefWorkerId);
+        const cancelledTicket = station?.cancelOneTicketForCustomer(
+          customer.customerId,
+          servedTicket.quantity,
+        );
+        if (cancelledTicket !== undefined) {
+          this.ticketStats.cancelled += 1;
+          if (cancelledTicket.chefWorkerId !== undefined) {
+            this.releaseChefIfCookingComplete(cancelledTicket.chefWorkerId);
+          }
         }
       }
     }
-    customer.serve();
+    const servedQuantity = servedTicket?.quantity ?? this.player.getCarriedQuantity();
+    const orderCompleted = customer.serveOne(servedQuantity);
     this.ticketStats.served += 1;
-    customer.showHeart();
+    if (orderCompleted) customer.showHeart();
     this.sfx.buy();
     if (automated) {
       this.pulseWorker(worker?.sprite);
     } else {
       this.player.clearCarriedFood();
       this.hud.setHeldFood();
-      this.toast.show("따뜻하게 서빙했어요!", "success");
+      this.toast.show(
+        orderCompleted
+          ? "주문을 모두 서빙했어요!"
+          : `한 접시 서빙 · ${customer.remainingQuantity}개 남음`,
+        "success",
+      );
     }
-    setStatus(`${getCustomerData(customer.kind).name} 손님에게 음식을 서빙했습니다.`);
+    setStatus(
+      orderCompleted
+        ? `${getCustomerData(customer.kind).name} 손님의 주문을 모두 서빙했습니다.`
+        : `${getCustomerData(customer.kind).name} 손님에게 한 접시를 서빙했습니다. ${customer.remainingQuantity}개 남았습니다.`,
+    );
   }
 
   private finishMeal(customer: Customer): void {
@@ -1054,7 +1134,9 @@ export class GameScene extends Phaser.Scene {
       tipRate: payment.tipRate,
       vipMultiplier: payment.vipMultiplier,
       comboMultiplier: payment.comboMultiplier,
-      feverMultiplier,
+      feverMultiplier: feverMultiplier
+        * this.customization.getFacilityEffects().revenueMultiplier
+        * this.currentEffects.fameRevenueMultiplier,
       ratingGain: 0,
     });
     const feverLevel = this.progression.getFeverState().level;
@@ -1263,7 +1345,7 @@ export class GameScene extends Phaser.Scene {
     this.hud.setHeldFood(ticket.menuItemId);
     this.sfx.click();
     this.toast.show(`${getMenuItem(ticket.menuItemId).name}을 들었어요`);
-    setStatus(`${getMenuItem(ticket.menuItemId).name} ×${ticket.quantity}을 들었습니다. 같은 주문을 기다리는 손님에게 가져다주세요.`);
+    setStatus(`${getMenuItem(ticket.menuItemId).name} 한 접시를 들었습니다. 같은 메뉴를 기다리는 손님 누구에게나 서빙할 수 있습니다.`);
   }
 
   private handleSpace(): void {
@@ -1282,11 +1364,12 @@ export class GameScene extends Phaser.Scene {
   }
 
   private applyEffects(effects: ProgressionEffects, celebrate: boolean): void {
-    this.createTables(effects.seatCount);
+    this.createTables(effects.seatCount + this.customization.getFacilityEffects().bonusSeats);
     const progressionState = this.progression.getState();
     for (const [menuItemId, station] of this.stations) {
       station.setUnlocked(effects.unlockedMenuIds.includes(menuItemId));
       station.setSpeedMultiplier(1);
+      station.setParallelSlotCount(effects.cookingSlotCount);
       const menuProgress = progressionState.menuProgress.find(
         (menu) => menu.menuItemId === menuItemId,
       );
@@ -1295,6 +1378,7 @@ export class GameScene extends Phaser.Scene {
           `${formatCompactNumber(this.progression.getMenuPrice(menuItemId))}냥`,
           menuProgress.priceLevel,
           menuProgress.speedLevel,
+          effects.cookingSlotCount,
         );
       }
     }
@@ -1412,31 +1496,133 @@ export class GameScene extends Phaser.Scene {
     );
     const motion = new PixelButton(
       this,
-      240,
+      292,
       184,
       this.reducedMotion ? "움직임 기본으로" : "움직임 줄이기",
       () => {
         this.setReducedMotion(!this.reducedMotion);
         motion.setText(this.reducedMotion ? "움직임 기본으로" : "움직임 줄이기");
       },
-      { width: 126, height: 24, primary: false, fontSize: 8 },
+      { width: 90, height: 24, primary: false, fontSize: 7 },
     );
-    const titleButton = new PixelButton(this, 240, 214, "타이틀로", () => {
+    const shop = new PixelButton(this, 188, 184, "외형 상점", () => this.openStyleShop(), {
+      width: 90, height: 24, primary: false, fontSize: 8,
+    });
+    const saveButton = new PixelButton(this, 188, 214, "지금 저장", () => {
+      this.saveProgress();
+      this.sfx.click();
+      subtitle.setText("저장 완료! 이제 안전하게 나가도 돼요");
+      this.time.delayedCall(1_500, () => {
+        if (subtitle.active) {
+          subtitle.setText("진행 상황은 자동으로 저장돼요");
+        }
+      });
+      setStatus("게임 진행 상황을 수동으로 저장했습니다.");
+    }, { width: 90, height: 22, primary: false, fontSize: 8 });
+    const titleButton = new PixelButton(this, 292, 214, "타이틀로", () => {
       this.saveProgress();
       this.scene.start("MenuScene");
     }, { width: 90, height: 22, primary: false, fontSize: 8 });
     this.pauseOverlay = this.add
-      .container(0, 0, [shade, panel, title, subtitle, resume, mute, motion, titleButton])
+      .container(0, 0, [shade, panel, title, subtitle, resume, mute, shop, motion, saveButton, titleButton])
       .setDepth(3_000);
     setStatus("게임이 일시정지되었습니다.");
   }
 
   private closePauseOverlay(): void {
+    this.shopOverlay?.destroy(true);
+    this.shopOverlay = undefined;
     this.pauseOverlay?.destroy(true);
     this.pauseOverlay = undefined;
     this.isPaused = false;
     this.player.setFrozen(false);
     setStatus("영업을 계속합니다.");
+  }
+
+  private openStyleShop(): void {
+    if (this.shopOverlay !== undefined) return;
+    const shade = this.add.rectangle(240, 135, 480, 270, 0x080b18, 0.9);
+    const panel = this.add.rectangle(240, 137, 330, 190, 0x171e37, 1).setStrokeStyle(2, 0x45c6b8);
+    const title = this.add.text(240, 58, "주인공 털색 상점", {
+      fontFamily: UI_FONT, fontStyle: "bold", fontSize: "14px", color: "#fff0bd",
+    }).setOrigin(0.5);
+    const items: Phaser.GameObjects.GameObject[] = [shade, panel, title];
+    OWNER_STYLES.forEach((style, index) => {
+      const owned = this.customization.isOwned(style.id);
+      const button = new PixelButton(this, 240, 92 + index * 29,
+        `${style.name} · ${owned ? "장착" : `${formatCompactNumber(style.cost)}냥`}`,
+        () => {
+          const result = this.customization.purchaseOrEquip(style.id, this.economy);
+          if (result === "insufficient") {
+            this.toast.show("털색을 사기엔 돈이 부족해요", "warning");
+            return;
+          }
+          this.player.setOwnerTint(style.tint);
+          this.refreshUi(false);
+          this.saveProgress();
+          this.shopOverlay?.destroy(true);
+          this.shopOverlay = undefined;
+          this.toast.show(result === "purchased" ? `${style.name} 털색 구매!` : `${style.name} 털색 장착!`, "success");
+        }, { width: 190, height: 23, primary: this.customization.getSelected().id === style.id, fontSize: 8 });
+      items.push(button);
+    });
+    const facilities = new PixelButton(this, 188, 224, "시설 상점", () => {
+      this.shopOverlay?.destroy(true);
+      this.shopOverlay = undefined;
+      this.openFacilityShop();
+    }, { width: 90, height: 22, primary: true, fontSize: 8 });
+    const close = new PixelButton(this, 292, 224, "닫기", () => {
+      this.shopOverlay?.destroy(true);
+      this.shopOverlay = undefined;
+    }, { width: 80, height: 22, primary: false, fontSize: 8 });
+    items.push(facilities, close);
+    this.shopOverlay = this.add.container(0, 0, items).setDepth(3_200);
+  }
+
+  private openFacilityShop(): void {
+    if (this.shopOverlay !== undefined) return;
+    const shade = this.add.rectangle(240, 135, 480, 270, 0x080b18, 0.9);
+    const panel = this.add.rectangle(240, 137, 350, 200, 0x171e37, 1).setStrokeStyle(2, 0xd49a55);
+    const title = this.add.text(240, 50, "가구·조리도구 상점", {
+      fontFamily: UI_FONT, fontStyle: "bold", fontSize: "14px", color: "#fff0bd",
+    }).setOrigin(0.5);
+    const effects = ["조리시간 -10%", "손님 인내심 +15%", "좌석 +1", "전체 결제 +10%"];
+    const items: Phaser.GameObjects.GameObject[] = [shade, panel, title];
+    FACILITY_UPGRADES.forEach((item, index) => {
+      const owned = this.customization.isFacilityOwned(item.id);
+      const button = new PixelButton(this, 240, 83 + index * 31,
+        `${item.name} · ${effects[index]} · ${owned ? "보유" : `${formatCompactNumber(item.cost)}냥`}`,
+        () => {
+          const result = this.customization.purchaseFacility(item.id, this.economy);
+          if (result === "insufficient") {
+            this.toast.show("시설을 사기엔 돈이 부족해요", "warning");
+            return;
+          }
+          if (result === "purchased") {
+            const facilityEffects = this.customization.getFacilityEffects();
+            this.createTables(this.currentEffects.seatCount + facilityEffects.bonusSeats);
+            this.decor.setShopTier(facilityEffects.visualTier);
+            this.refreshUi(false);
+            this.saveProgress();
+            this.toast.show(`${item.name} 설치 완료!`, "success");
+          }
+          this.shopOverlay?.destroy(true);
+          this.shopOverlay = undefined;
+          this.openFacilityShop();
+        }, { width: 280, height: 24, primary: !owned, fontSize: 7 });
+      items.push(button);
+    });
+    const styleShop = new PixelButton(this, 188, 225, "외형 상점", () => {
+      this.shopOverlay?.destroy(true);
+      this.shopOverlay = undefined;
+      this.openStyleShop();
+    }, { width: 90, height: 22, primary: false, fontSize: 8 });
+    const close = new PixelButton(this, 292, 225, "닫기", () => {
+      this.shopOverlay?.destroy(true);
+      this.shopOverlay = undefined;
+    }, { width: 80, height: 22, primary: false, fontSize: 8 });
+    items.push(styleShop, close);
+    this.shopOverlay = this.add.container(0, 0, items).setDepth(3_200);
   }
 
   private toggleMute(): void {
@@ -1449,7 +1635,8 @@ export class GameScene extends Phaser.Scene {
     this.reducedMotion = reducedMotion;
     this.decor.setReducedMotion(reducedMotion);
     this.atmosphere.setReducedMotion(reducedMotion);
-    this.sfx.setAmbience(this.currentVisualPhase, reducedMotion);
+    const visualState = this.dayNight.getState();
+    this.sfx.setAmbience(this.currentVisualPhase, reducedMotion, visualState.phaseTrackIndex, visualState.phaseElapsedMs);
     this.toast.show(reducedMotion ? "움직임을 줄였어요" : "기본 움직임을 켰어요");
     this.saveProgress();
   }
@@ -1643,11 +1830,14 @@ export class GameScene extends Phaser.Scene {
     const effects = this.progression.getEffects();
     if (effects.chefCount === 0 || effects.serverCount === 0) return;
     const weights = this.progression.getMenuOrderWeights();
+    const facilityEffects = this.customization.getFacilityEffects();
     let revenuePerSecond = 0;
     for (const [menuItemId, weight] of weights) {
       revenuePerSecond += weight
         * this.progression.getMenuPrice(menuItemId)
-        / Math.max(1, this.progression.getMenuCookingTimeMs(menuItemId) / 1_000);
+        * facilityEffects.revenueMultiplier
+        * effects.fameRevenueMultiplier
+        / Math.max(1, this.progression.getMenuCookingTimeMs(menuItemId) * facilityEffects.cookingTimeMultiplier / 1_000);
     }
     const automation = Math.min(1, effects.chefCount / Math.max(1, effects.unlockedMenuIds.length))
       * Math.min(1, effects.serverCount / 2);
@@ -1663,6 +1853,15 @@ export class GameScene extends Phaser.Scene {
       return;
     }
     this.tweens.add({ targets: worker, scaleX: 1.15, scaleY: 1.15, duration: 100, yoyo: true });
+  }
+
+  private releaseChefIfCookingComplete(workerId: string): void {
+    const hasPendingCooking = [...this.stations.values()].some(
+      (station) => station.hasPendingCookingForChef(workerId),
+    );
+    if (!hasPendingCooking) {
+      this.releaseChef(workerId);
+    }
   }
 
   private releaseChef(workerId: string): void {
@@ -1759,6 +1958,7 @@ export class GameScene extends Phaser.Scene {
           queued: station.getQueueCount(),
           ready: station.getReadyCount(),
           active: station.getActiveTicket() !== undefined,
+          activeCount: station.getActiveCount(),
         })),
         atmosphere: this.atmosphere.getDiagnostics(),
         performance: {
@@ -1781,6 +1981,7 @@ export class GameScene extends Phaser.Scene {
           y: Math.round(customer.y),
           orderId: customer.orderId,
           quantity: customer.orderQuantity,
+          remainingQuantity: customer.remainingQuantity,
           patienceMs: Math.round(customer.patienceMs),
           vip: customer.isVip,
         })),
@@ -1792,7 +1993,7 @@ export class GameScene extends Phaser.Scene {
         this.currentVisualPhase = state.phase;
         this.decor.setPhase(state.phase, true);
         this.atmosphere.setPhase(state.phase, true);
-        this.sfx.setAmbience(state.phase, this.reducedMotion);
+        this.sfx.setAmbience(state.phase, this.reducedMotion, state.phaseTrackIndex, state.phaseElapsedMs);
         for (const customer of this.customers.values()) customer.setNightMode(state.phase === "night");
         this.hud.setWorldTime(state);
       },
@@ -1856,6 +2057,12 @@ export class GameScene extends Phaser.Scene {
       .setDepth(950);
   }
 
+  private handleAppVisibilityChange(hidden: boolean): void {
+    this.sfx.setMusicPaused(
+      hidden || this.isPaused || this.tutorialOverlay !== undefined || this.clearing,
+    );
+  }
+
   private handleShutdown(): void {
     this.saveProgress(this.clearing || this.progression.isGameComplete());
     this.removeEconomyListener?.();
@@ -1871,6 +2078,7 @@ export class GameScene extends Phaser.Scene {
       this.debugStatusElement = undefined;
     }
     this.game.events.off("app-before-unload", this.saveProgress, this);
+    this.game.events.off("app-visibility-change", this.handleAppVisibilityChange, this);
     const keyboard = this.input.keyboard;
     keyboard?.off("keydown-SPACE", this.handleSpace, this);
     keyboard?.off("keydown-ESC", this.togglePause, this);

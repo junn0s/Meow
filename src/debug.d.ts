@@ -46,6 +46,7 @@ export interface MeowDinerDebugState {
     readonly queued: number;
     readonly ready: number;
     readonly active: boolean;
+    readonly activeCount: number;
   }[];
   readonly atmosphere: {
     readonly activeLights: number;
@@ -53,6 +54,7 @@ export interface MeowDinerDebugState {
     readonly visibleParticles: number;
     readonly reducedMotion: boolean;
     readonly mode: "normal" | "fever" | "rush";
+    readonly lowPowerMode: boolean;
   };
   readonly performance: { readonly averageFps: number; readonly sampleCount: number };
   readonly offlineReward?: { readonly elapsedMs: number; readonly amount: number; readonly capped: boolean };
@@ -69,6 +71,7 @@ export interface MeowDinerDebugState {
     readonly y: number;
     readonly orderId?: string;
     readonly quantity: number;
+    readonly remainingQuantity: number;
     readonly patienceMs: number;
     readonly vip: boolean;
   }[];

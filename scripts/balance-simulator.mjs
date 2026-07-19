@@ -50,7 +50,7 @@ for (const stage of stages) {
 const coreReports = reports.filter((report) => report.persona === "core");
 const violations = validate(stages, coreReports);
 const output = {
-  seed: "meow-night-diner-balance-v1",
+  seed: "meow-night-diner-balance-v2-relaxed",
   runsPerPersona: RUNS_PER_PERSONA,
   totalTargetActiveMinutes: stages.reduce(
     (total, stage) => total + stage.targetDurationSeconds,
@@ -108,12 +108,15 @@ function simulateStage(stage, persona, run, costMultiplier = 1) {
 
 function validate(stageConfigs, core) {
   const violations = [];
+  const expectedTotalTargetSeconds = 16_218;
   if (stageConfigs.length !== 30) {
     violations.push(`Expected 30 stages, received ${stageConfigs.length}.`);
   }
   const totalSeconds = stageConfigs.reduce((sum, stage) => sum + stage.targetDurationSeconds, 0);
-  if (totalSeconds !== 22_860) {
-    violations.push(`Target active time must be 22,860 seconds, received ${totalSeconds}.`);
+  if (totalSeconds !== expectedTotalTargetSeconds) {
+    violations.push(
+      `Target active time must be ${expectedTotalTargetSeconds.toLocaleString()} seconds, received ${totalSeconds}.`,
+    );
   }
   for (const stage of stageConfigs) {
     if (stage.purchaseCosts.some((cost) => !Number.isFinite(cost) || cost <= 0)) {

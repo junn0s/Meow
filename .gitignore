@@ -5,3 +5,5 @@ dist/
 .vite/
 output/
 .playwright-cli/
+# Local high-bitrate source music; optimized deployable tracks live in public/audio.
+music/

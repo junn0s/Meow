@@ -165,9 +165,13 @@ export interface ProgressionEffects {
   readonly customerSpawnIntervalMultiplier: number;
   readonly chefCount: number;
   readonly serverCount: number;
+  /** Total simultaneous cooking jobs, including the owner's initial slot. */
+  readonly cookingSlotCount: number;
   readonly chefHired: boolean;
   readonly serverHired: boolean;
   readonly feverLevel: 0 | 1 | 2 | 3;
+  readonly fameLevel: VisualTier;
+  readonly fameRevenueMultiplier: number;
   readonly vipUnlocked: boolean;
   readonly rushUnlocked: boolean;
   readonly finalFacilityPurchased: boolean;
@@ -200,6 +204,9 @@ export interface WorldVisualState {
   readonly nextPhase: VisualPhase;
   readonly phaseProgress: number;
   readonly phaseRemainingMs: number;
+  readonly phaseTrackIndex: number;
+  readonly phaseElapsedMs: number;
+  readonly musicLoopIndex: number;
   readonly visualTier: VisualTier;
 }
 

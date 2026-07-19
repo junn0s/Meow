@@ -1,3 +1,6 @@
+import type { VisualPhase } from "../types/game";
+import { getMusicPlaylist, type MusicContext } from "./musicTracks";
+
 export const SOUND_EFFECTS = [
   "coin",
   "ready",
@@ -67,6 +70,10 @@ export class SoundManager {
   private ambienceOscillator: OscillatorNode | null = null;
   private ambienceGain: GainNode | null = null;
   private ambiencePhase?: VisualPhase;
+  private music?: HTMLAudioElement;
+  private musicContext?: MusicContext;
+  private musicTrackIndex = 0;
+  private musicPaused = false;
 
   public constructor(initialMuted = false) {
     this.muted = initialMuted;
@@ -78,6 +85,10 @@ export class SoundManager {
 
   public setMuted(muted: boolean): void {
     this.muted = muted;
+    if (this.music !== undefined) {
+      this.music.volume = muted ? 0 : 0.18;
+      if (!muted) void this.playMusic();
+    }
 
     if (this.masterGain !== null && this.context !== null) {
       const now = this.context.currentTime;
@@ -97,6 +108,7 @@ export class SoundManager {
    * audio can start. It is also safe to omit; play() attempts the same resume.
    */
   public async unlock(): Promise<boolean> {
+    void this.playMusic();
     const context = this.getOrCreateContext();
     if (context === null) {
       return false;
@@ -127,6 +139,7 @@ export class SoundManager {
     if (context.state === "suspended") {
       void context.resume().catch(() => undefined);
     }
+    void this.playMusic();
 
     const startTime = context.currentTime + 0.005;
     for (const tone of EFFECT_TONES[effect]) {
@@ -163,8 +176,14 @@ export class SoundManager {
   }
 
   /** A very quiet procedural room tone that crossfades with the four visual phases. */
-  public setAmbience(phase: VisualPhase, reducedMotion = false): void {
+  public setAmbience(
+    phase: VisualPhase,
+    reducedMotion = false,
+    trackIndex = 0,
+    elapsedMs = 0,
+  ): void {
     this.ambiencePhase = phase;
+    this.setMusicContext(phase, trackIndex, elapsedMs);
     const context = this.getOrCreateContext();
     const destination = this.masterGain;
     if (context === null || destination === null) return;
@@ -192,6 +211,17 @@ export class SoundManager {
     this.ambienceGain.gain.setTargetAtTime(this.muted ? 0.0001 : 0.012, now, reducedMotion ? 0.03 : 0.25);
   }
 
+  public setMenuMusic(): void {
+    this.setMusicContext("menu", 0, 0);
+  }
+
+  public setMusicPaused(paused: boolean): void {
+    if (this.musicPaused === paused) return;
+    this.musicPaused = paused;
+    if (paused) this.music?.pause();
+    else void this.playMusic();
+  }
+
   public dispose(): void {
     if (this.disposed) {
       return;
@@ -207,6 +237,12 @@ export class SoundManager {
     this.ambienceGain?.disconnect();
     this.ambienceOscillator = null;
     this.ambienceGain = null;
+    if (this.music !== undefined) {
+      this.music.pause();
+      this.music.removeAttribute("src");
+      this.music.load();
+      this.music = undefined;
+    }
     const context = this.context;
     this.context = null;
     this.masterGain = null;
@@ -237,9 +273,6 @@ export class SoundManager {
       masterGain.connect(context.destination);
       this.context = context;
       this.masterGain = masterGain;
-      if (this.ambiencePhase !== undefined) {
-        queueMicrotask(() => this.setAmbience(this.ambiencePhase ?? "night"));
-      }
       return context;
     } catch {
       return null;
@@ -273,7 +306,46 @@ export class SoundManager {
     oscillator.start(start);
     oscillator.stop(end + 0.01);
   }
+
+  private setMusicContext(context: MusicContext, trackIndex: number, elapsedMs: number): void {
+    if (this.disposed) return;
+    const playlist = getMusicPlaylist(context);
+    const safeTrackIndex = Math.max(0, Math.min(playlist.length - 1, Math.floor(trackIndex)));
+    if (this.musicContext === context && this.musicTrackIndex === safeTrackIndex) return;
+    this.musicContext = context;
+    this.musicTrackIndex = safeTrackIndex;
+    const music = this.getOrCreateMusic();
+    if (music === undefined) return;
+    music.src = playlist[safeTrackIndex] ?? "";
+    music.load();
+    if (elapsedMs > 0) {
+      music.addEventListener("loadedmetadata", () => {
+        music.currentTime = Math.min(Math.max(0, elapsedMs / 1_000), Math.max(0, music.duration - 0.05));
+      }, { once: true });
+    }
+    void this.playMusic();
+  }
+
+  private getOrCreateMusic(): HTMLAudioElement | undefined {
+    if (this.disposed || typeof Audio === "undefined") return undefined;
+    if (this.music !== undefined) return this.music;
+    const music = new Audio();
+    music.preload = "metadata";
+    music.volume = this.muted ? 0 : 0.18;
+    this.music = music;
+    return music;
+  }
+
+  private async playMusic(): Promise<void> {
+    if (this.muted || this.musicPaused || this.disposed || this.musicContext === undefined) return;
+    const music = this.getOrCreateMusic();
+    if (music === undefined || music.src.length === 0) return;
+    try {
+      await music.play();
+    } catch {
+      // Retry after the next user gesture when autoplay is restricted.
+    }
+  }
 }
 
 export default SoundManager;
-import type { VisualPhase } from "../types/game";

@@ -192,8 +192,11 @@ export class HUD {
       return;
     }
     const active = activeRemainingMs > 0;
+    const multiplier = [1, 1.5, 1.65, 1.8][level] ?? 1;
     this.feverText
-      .setText(active ? `FEVER Lv.${level} ${Math.ceil(activeRemainingMs / 1_000)}s` : `FEVER Lv.${level}`)
+      .setText(active
+        ? `FEVER ×${multiplier} · ${Math.ceil(activeRemainingMs / 1_000)}s`
+        : `FEVER ×${multiplier} · ${Math.round(gauge)}%`)
       .setColor(active ? "#9ffff0" : "#b5c7d8");
     this.feverFill
       .setFillStyle(active ? 0x45ffd2 : 0x39bfa8, 1)

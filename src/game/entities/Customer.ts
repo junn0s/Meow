@@ -16,9 +16,10 @@ export class Customer extends Phaser.GameObjects.Container {
   public assignedTableId?: string;
   public orderId?: MenuItemId;
   public orderQuantity = 1;
+  public remainingQuantity = 1;
   public orderAccepted = false;
   public patienceMs: number;
-  public readonly maxPatienceMs: number;
+  public maxPatienceMs: number;
   public eatingRemainingMs = 0;
   public stateElapsedMs = 0;
   public targetX: number;
@@ -166,13 +167,20 @@ export class Customer extends Phaser.GameObjects.Container {
     return false;
   }
 
-  public placeOrder(menuItemId: MenuItemId, quantity = 1): void {
+  public placeOrder(menuItemId: MenuItemId, quantity = 1, patienceBudgetMs?: number): void {
+    const normalizedQuantity = Math.max(1, Math.round(quantity));
     this.orderId = menuItemId;
-    this.orderQuantity = quantity;
+    this.orderQuantity = normalizedQuantity;
+    this.remainingQuantity = normalizedQuantity;
     this.orderAccepted = false;
+    if (patienceBudgetMs !== undefined) {
+      const normalizedPatience = Math.max(1, Math.round(patienceBudgetMs));
+      this.maxPatienceMs = Math.max(this.maxPatienceMs, normalizedPatience);
+      this.patienceMs = Math.max(this.patienceMs, normalizedPatience);
+    }
     this.bubble.setVisible(true);
     this.foodIcon.setTexture(`food-${menuItemId}`).setVisible(true);
-    this.quantityText.setText(quantity > 1 ? `×${quantity}` : "").setVisible(quantity > 1);
+    this.updateQuantityLabel();
     this.setCustomerState(CustomerState.ORDERING);
   }
 
@@ -201,12 +209,22 @@ export class Customer extends Phaser.GameObjects.Container {
       .setVisible(ratio <= 0.58);
   }
 
-  public serve(): void {
+  public serveOne(quantity = 1): boolean {
+    const servedQuantity = Math.max(1, Math.round(quantity));
+    this.remainingQuantity = Math.max(0, this.remainingQuantity - servedQuantity);
+    if (this.remainingQuantity > 0) {
+      this.patienceMs = Math.min(this.maxPatienceMs, this.patienceMs + 2_500);
+      this.updateQuantityLabel();
+      this.character.setTint(0xfff0bb);
+      this.scene.time.delayedCall(180, () => this.character.clearTint());
+      return false;
+    }
     const data = getCustomerData(this.kind);
     this.eatingRemainingMs = data.eatingTimeMs;
     this.setCustomerState(CustomerState.EATING);
     this.character.setTint(0xfff0bb);
     this.scene.time.delayedCall(240, () => this.character.clearTint());
+    return true;
   }
 
   public tickEating(deltaMs: number): boolean {
@@ -252,5 +270,12 @@ export class Customer extends Phaser.GameObjects.Container {
 
   public resetBubbleTint(): void {
     this.bubble.clearTint();
+  }
+
+  private updateQuantityLabel(): void {
+    const showRemaining = this.orderQuantity > 1 && this.remainingQuantity > 0;
+    this.quantityText
+      .setText(showRemaining ? `×${this.remainingQuantity}` : "")
+      .setVisible(showRemaining);
   }
 }

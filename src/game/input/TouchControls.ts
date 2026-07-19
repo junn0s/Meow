@@ -77,19 +77,25 @@ export function bindTouchControls(root: ParentNode = document): () => void {
         // Older mobile browsers can reject capture; pointerup still releases the input.
       }
     };
-    const preventContextMenu = (event: Event): void => event.preventDefault();
+    const preventNativeGesture = (event: Event): void => event.preventDefault();
 
     button.addEventListener("pointerdown", press);
     button.addEventListener("pointerup", release);
     button.addEventListener("pointercancel", release);
     button.addEventListener("lostpointercapture", release);
-    button.addEventListener("contextmenu", preventContextMenu);
+    button.addEventListener("contextmenu", preventNativeGesture);
+    button.addEventListener("dblclick", preventNativeGesture);
+    button.addEventListener("dragstart", preventNativeGesture);
+    button.addEventListener("selectstart", preventNativeGesture);
     cleanups.push(() => {
       button.removeEventListener("pointerdown", press);
       button.removeEventListener("pointerup", release);
       button.removeEventListener("pointercancel", release);
       button.removeEventListener("lostpointercapture", release);
-      button.removeEventListener("contextmenu", preventContextMenu);
+      button.removeEventListener("contextmenu", preventNativeGesture);
+      button.removeEventListener("dblclick", preventNativeGesture);
+      button.removeEventListener("dragstart", preventNativeGesture);
+      button.removeEventListener("selectstart", preventNativeGesture);
       for (const pointerId of activePointerIds) touchInput.releasePointer(pointerId);
       activePointerIds.clear();
       setPressed(false);

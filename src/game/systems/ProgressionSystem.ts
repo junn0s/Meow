@@ -137,9 +137,12 @@ export class ProgressionSystem {
       customerSpawnIntervalMultiplier: 1,
       chefCount: this.state.workerProgress.chefCount,
       serverCount: this.state.workerProgress.serverCount,
+      cookingSlotCount: Math.max(1, this.state.workerProgress.chefCount),
       chefHired: this.state.workerProgress.chefCount > 0,
       serverHired: this.state.workerProgress.serverCount > 0,
       feverLevel: this.state.feverState.level,
+      fameLevel: stageToVisualTier(this.state.currentStage),
+      fameRevenueMultiplier: 1 + (stageToVisualTier(this.state.currentStage) - 1) * 0.02,
       vipUnlocked: completedStage >= 23,
       rushUnlocked: completedStage >= 25,
       finalFacilityPurchased: this.isFinalFacilityPurchased(),
@@ -409,12 +412,15 @@ function buildPurchase(state: ProgressionState): ProgressionPurchaseData {
   }
 
   if (step === stepCount) {
+    const chefSlotCount = [4, 12, 19, 27].indexOf(state.currentStage) + 1;
     return {
       stage: state.currentStage,
       step,
       stepCount,
       name: config.keyUpgrade,
-      description: `${state.currentStage}단계의 핵심 확장을 완성하고 다음 단계를 엽니다.`,
+      description: chefSlotCount > 0
+        ? `셰프와 조리 슬롯을 ${chefSlotCount}개로 늘려 같은 메뉴도 동시에 만듭니다.`
+        : `${state.currentStage}단계의 핵심 확장을 완성하고 다음 단계를 엽니다.`,
       cost,
       effect: "stage_key",
       targetMenuItemId: activeMenu?.menuItemId,
@@ -443,7 +449,12 @@ function applyStageKey(
   const unlock = MENU_UNLOCKS.get(stage);
   if (unlock !== undefined) {
     menuProgress = menuProgress.map((menu) => menu.menuItemId === unlock
-      ? { ...menu, unlocked: true, priceLevel: Math.max(1, menu.priceLevel) }
+      ? {
+          ...menu,
+          unlocked: true,
+          priceLevel: Math.max(1, menu.priceLevel),
+          speedLevel: Math.max(1, menu.speedLevel),
+        }
       : menu);
   }
   const special = MENU_SPECIALS.get(stage);
@@ -476,6 +487,9 @@ function repairProgressionState(state: ProgressionState): ProgressionState {
       priceLevel: menu.unlocked || (config !== undefined && config.unlockStage <= completedStage)
         ? Math.max(1, menu.priceLevel)
         : menu.priceLevel,
+      speedLevel: config !== undefined && config.unlockStage > 1 && config.unlockStage <= completedStage
+        ? Math.max(1, menu.speedLevel)
+        : menu.speedLevel,
       specialMultiplier: specialStage !== undefined && specialStage <= completedStage && specialEntry !== undefined
         ? Math.max(menu.specialMultiplier, specialEntry.multiplier)
         : menu.specialMultiplier,

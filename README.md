@@ -30,9 +30,13 @@ Key features include:
 
 - 30 progression stages with six visual tiers
 - Six unlockable dishes with separate price and cooking-speed upgrades
-- Expandable seating and automatic chef and server workers
+- Expandable seating and automatic chef and server workers with same-dish parallel cooking
+- A persistent owner-cat color shop with purchasable and equipable styles
+- Persistent facility upgrades for cooking speed, patience, seating, revenue, and decor
 - Day, sunset, night, and dawn transitions during active play
+- Phase-aware lo-fi playlists for the menu, day, sunset, night, and dawn
 - Fever time, menu promotions, customer rushes, combos, tips, and VIP bonuses
+- Six fame tiers that expand the diner visuals and add up to a 10% revenue bonus
 - Local save data and capped offline earnings
 - Keyboard, mouse, and mobile touch controls
 
@@ -45,6 +49,7 @@ Key features include:
 | Move the owner cat | `WASD` or arrow keys |
 | Take an order, pick up food, or serve | `Space` |
 | Pause or open settings | `Esc` |
+| Save immediately | Open settings, then select `지금 저장` |
 | Toggle sound effects | `M` |
 | Use menus and buy upgrades | Mouse click |
 
@@ -53,8 +58,9 @@ Key features include:
 | Action | Control |
 | --- | --- |
 | Move the owner cat | Hold the on-screen directional pad |
-| Take an order, pick up food, or serve | Tap `ACTION` |
+| Take an order, pick up food, or serve | Tap the round action button |
 | Pause or open settings | Tap the pause button |
+| Save immediately | Open settings, then tap `지금 저장` |
 | Use menus and buy upgrades | Tap the desired button |
 
 Before hiring workers, the owner cat handles orders and serving manually. Each chef manages one cooking task at a time, while each server independently delivers a ready dish to any compatible waiting customer.
@@ -88,6 +94,7 @@ src/
 | `src/game/data/progressionData.ts` | Defines the 30-stage progression curve and worker unlocks. |
 | `src/game/systems/ProgressionSystem.ts` | Applies purchases, menu levels, fever progression, and stage completion rules. |
 | `src/game/systems/ServiceFlowRules.ts` | Controls customer capacity, arrival flow, and valid food recipients. |
+| `src/game/systems/CookingFlowRules.ts` | Enforces kitchen slot capacity and one simultaneous task per chef. |
 | `src/game/systems/DayNightController.ts` | Advances the active-play clock through day, sunset, night, and dawn. |
 | `src/game/input/TouchControls.ts` | Converts held mobile buttons into continuous movement and actions. |
 | `src/ui/UpgradePanel.ts` | Displays the current progression goal and handles upgrade purchases. |
@@ -122,4 +129,4 @@ The production client is generated in `dist/client`. GitHub Pages deployment is 
 - [AI Usage Report](docs/ai-usage-report.md)
 - [Assets and Licenses](docs/asset-licenses.md)
 
-All pixel textures are generated with Phaser Graphics, and the sound effects and ambience are synthesized with the Web Audio API. The project does not depend on external image, music, or web-font assets.
+All pixel textures are generated with Phaser Graphics, while short sound effects and room tone are synthesized with the Web Audio API. The lo-fi background playlist is stored as optimized Opus audio; attribution and asset notes are documented in [Assets and Licenses](docs/asset-licenses.md).

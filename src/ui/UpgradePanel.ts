@@ -18,6 +18,7 @@ export class UpgradePanel {
   private readonly buttonText: Phaser.GameObjects.Text;
   private readonly badgeText: Phaser.GameObjects.Text;
   private readonly levelText: Phaser.GameObjects.Text;
+  private readonly fameText: Phaser.GameObjects.Text;
   private currentView?: ProgressionPurchaseView;
   private handler?: UpgradePurchaseHandler;
 
@@ -90,6 +91,14 @@ export class UpgradePanel {
       })
       .setOrigin(0.5)
       .setDepth(depth + 3);
+    this.fameText = scene.add
+      .text(415, 188, "명성 Lv.1 · 결제 +0%", {
+        fontFamily: '"Gowun Dodum", sans-serif',
+        fontSize: "7px",
+        color: "#71e3d1",
+      })
+      .setOrigin(0.5)
+      .setDepth(depth + 2);
     this.button.on("pointerover", () => {
       if (this.currentView?.canPurchase === true) {
         this.button.setFillStyle(0xd35e43);
@@ -141,6 +150,8 @@ export class UpgradePanel {
   ): void {
     this.currentView = view;
     const progress = Phaser.Math.Clamp(view?.overallProgress ?? 1, 0, 1);
+    const fameLevel = view?.chapter ?? 6;
+    this.fameText.setText(`명성 Lv.${fameLevel} · 결제 +${(fameLevel - 1) * 2}%`);
     this.progressFill.width = 102 * progress;
     const activeMenu = [...state.menuProgress].reverse().find((menu) => menu.unlocked)
       ?? state.menuProgress[0];

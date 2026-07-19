@@ -18,6 +18,8 @@ assert.match(atmosphere, /MAX_ATMOSPHERE_PARTICLES = 60/u);
 const styles = read("src/styles.css");
 assert.match(styles, /prefers-reduced-motion: reduce/u);
 assert.match(styles, /min-width: 44px/u, "touch targets must be at least 44px");
+assert.match(styles, /-webkit-touch-callout: none/u, "iOS touch callouts must be disabled");
+assert.match(styles, /-webkit-user-select: none/u, "mobile controls must not select text");
 const html = read("index.html");
 assert.match(html, /aria-live="polite"/u);
 assert.match(html, /aria-label="모바일 게임 조작"/u);
@@ -26,7 +28,21 @@ assert.match(html, /data-touch-command="action"/u);
 const touchControls = read("src/game/input/TouchControls.ts");
 assert.match(touchControls, /pointercancel/u, "touch cancellation must release movement");
 assert.match(touchControls, /visibilitychange/u, "hidden tabs must reset held directions");
-assert.doesNotMatch(read("src/main.ts"), /new KeyboardEvent/u, "touch must not rely on synthetic keyboard events");
+assert.match(touchControls, /selectstart/u, "native text selection must be blocked on controls");
+assert.match(touchControls, /dblclick/u, "double taps must not open native selection UI");
+const main = read("src/main.ts");
+assert.doesNotMatch(main, /new KeyboardEvent/u, "touch must not rely on synthetic keyboard events");
+assert.match(main, /pagehide/u, "mobile page exits must request an immediate save");
+assert.match(main, /document\.visibilityState === "hidden"/u, "backgrounding the app must request a save");
+assert.match(main, /limit: 30/u, "touch devices must cap the game loop at 30 FPS");
+assert.match(main, /"low-power"/u, "touch devices must request a low-power GPU profile");
+assert.match(read("src/game/scenes/GameScene.ts"), /지금 저장/u, "the pause menu must expose manual save");
+const soundManager = read("src/game/audio/SoundManager.ts");
+assert.match(soundManager, /setMenuMusic/u, "menu music must be supported");
+assert.match(read("src/game/data/musicSchedule.ts"), /MUSIC_PHASE_SLOTS/u, "music-driven world schedule is required");
+for (const track of ["menu", "day-1", "day-2", "sunset-1", "sunset-2", "night-1", "night-2", "night-3", "dawn-1", "dawn-2"]) {
+  assert.ok(existsSync(new URL(`public/audio/${track}.opus`, root)), `missing optimized music track: ${track}`);
+}
 
 assert.ok(contrastRatio("#d9f5ff", "#11162c") >= 4.5, "HUD text contrast is below 4.5:1");
 assert.ok(contrastRatio("#45ffd2", "#2e3855") >= 3, "fever indicator contrast is below 3:1");

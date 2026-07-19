@@ -49,14 +49,14 @@ export const MENU_PROGRESSION_CONFIGS: readonly MenuProgressionConfig[] = [
 ];
 
 export const WORKER_HIRE_CONFIGS: readonly WorkerHireConfig[] = [
-  { role: "chef", ordinal: 1, unlockStage: 4, cost: 762, actionTimeMs: 1_100 },
-  { role: "chef", ordinal: 2, unlockStage: 12, cost: 485_000, actionTimeMs: 850 },
-  { role: "chef", ordinal: 3, unlockStage: 19, cost: 47_700_000, actionTimeMs: 650 },
-  { role: "chef", ordinal: 4, unlockStage: 27, cost: 11_800_000_000, actionTimeMs: 500 },
-  { role: "server", ordinal: 1, unlockStage: 7, cost: 12_200, actionTimeMs: 4_800 },
-  { role: "server", ordinal: 2, unlockStage: 14, cost: 1_600_000, actionTimeMs: 4_300 },
-  { role: "server", ordinal: 3, unlockStage: 22, cost: 406_000_000, actionTimeMs: 3_900 },
-  { role: "server", ordinal: 4, unlockStage: 28, cost: 25_800_000_000, actionTimeMs: 3_600 },
+  { role: "chef", ordinal: 1, unlockStage: 4, cost: 762, actionTimeMs: 950 },
+  { role: "chef", ordinal: 2, unlockStage: 12, cost: 340_000, actionTimeMs: 850 },
+  { role: "chef", ordinal: 3, unlockStage: 19, cost: 33_400_000, actionTimeMs: 650 },
+  { role: "chef", ordinal: 4, unlockStage: 27, cost: 8_260_000_000, actionTimeMs: 500 },
+  { role: "server", ordinal: 1, unlockStage: 7, cost: 10_000, actionTimeMs: 4_200 },
+  { role: "server", ordinal: 2, unlockStage: 14, cost: 1_120_000, actionTimeMs: 4_300 },
+  { role: "server", ordinal: 3, unlockStage: 22, cost: 284_000_000, actionTimeMs: 3_900 },
+  { role: "server", ordinal: 4, unlockStage: 28, cost: 18_100_000_000, actionTimeMs: 3_600 },
 ];
 
 const PRESSURE_BANDS = [

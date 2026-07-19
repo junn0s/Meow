@@ -6,10 +6,17 @@ export interface CookingTicket {
   readonly customerId: string;
   readonly menuItemId: MenuItemId;
   readonly quantity: number;
+  readonly cookingTimeMs?: number;
   readonly chefWorkerId?: string;
 }
 
 export type FoodReadyCallback = (station: CookingStation, ticket: CookingTicket) => void;
+
+interface ActiveCookingSlot {
+  ticket: CookingTicket;
+  elapsedMs: number;
+  durationMs: number;
+}
 
 export class CookingStation {
   public readonly menuItemId: MenuItemId;
@@ -25,14 +32,13 @@ export class CookingStation {
   private readonly readyIcon: Phaser.GameObjects.Image;
   private readonly queue: CookingTicket[] = [];
   private readonly readyTickets: CookingTicket[] = [];
-  private activeTicket?: CookingTicket;
-  private elapsedMs = 0;
-  private durationMs = 1;
+  private readonly activeSlots: ActiveCookingSlot[] = [];
+  private parallelSlotCount = 1;
   private unlocked = false;
   private speedMultiplier = 1;
   private onFoodReady?: FoodReadyCallback;
   private cookingTimeResolver?: (quantity: number) => number;
-  private canStartNextResolver?: () => boolean;
+  private canStartNextResolver?: (ticket: CookingTicket) => boolean;
 
   public constructor(scene: Phaser.Scene, menuItemId: MenuItemId, x: number, y: number) {
     this.scene = scene;
@@ -101,14 +107,24 @@ export class CookingStation {
     this.cookingTimeResolver = resolver;
   }
 
-  public setCanStartNextResolver(resolver: () => boolean): void {
+  public setCanStartNextResolver(resolver: (ticket: CookingTicket) => boolean): void {
     this.canStartNextResolver = resolver;
   }
 
-  public setProgressStats(priceLabel: string, priceLevel: number, speedLevel: number): void {
+  public setParallelSlotCount(count: number): void {
+    this.parallelSlotCount = Phaser.Math.Clamp(Math.floor(count), 1, 4);
+    this.startAvailableTickets();
+  }
+
+  public setProgressStats(
+    priceLabel: string,
+    priceLevel: number,
+    speedLevel: number,
+    cookingSlotCount = 1,
+  ): void {
     const item = getMenuItem(this.menuItemId);
     this.label
-      .setText(`${item.name} ${priceLabel}\nP${priceLevel} · S${speedLevel}`)
+      .setText(`${item.name} ${priceLabel}\nP${priceLevel} · S${speedLevel} · C${cookingSlotCount}`)
       .setFontSize(6)
       .setAlign("center");
   }
@@ -118,27 +134,33 @@ export class CookingStation {
       return;
     }
     this.queue.push(ticket);
-    this.startNextIfIdle();
+    this.startAvailableTickets();
   }
 
   public update(deltaMs: number): void {
-    if (this.activeTicket === undefined) {
-      this.startNextIfIdle();
+    this.startAvailableTickets();
+    if (this.activeSlots.length === 0) {
       return;
     }
 
-    this.elapsedMs += deltaMs;
-    const ratio = Phaser.Math.Clamp(this.elapsedMs / this.durationMs, 0, 1);
-    this.progressFill.width = 36 * ratio;
-    if (this.elapsedMs < this.durationMs) {
-      return;
+    for (const slot of this.activeSlots) {
+      slot.elapsedMs += deltaMs;
     }
+    const furthestProgress = Math.max(...this.activeSlots.map(
+      (slot) => Phaser.Math.Clamp(slot.elapsedMs / slot.durationMs, 0, 1),
+    ));
+    this.progressFill.width = 36 * furthestProgress;
 
-    const completedTicket = this.activeTicket;
-    this.activeTicket = undefined;
-    this.readyTickets.push(completedTicket);
-    this.progressBackground.setVisible(false);
-    this.progressFill.setVisible(false);
+    const completed = this.activeSlots.filter((slot) => slot.elapsedMs >= slot.durationMs);
+    if (completed.length === 0) return;
+    for (const slot of completed) {
+      const index = this.activeSlots.indexOf(slot);
+      if (index >= 0) this.activeSlots.splice(index, 1);
+      this.readyTickets.push(slot.ticket);
+      this.onFoodReady?.(this, slot.ticket);
+    }
+    this.progressBackground.setVisible(this.activeSlots.length > 0);
+    this.progressFill.setVisible(this.activeSlots.length > 0);
     this.readyIcon.setVisible(true);
     this.scene.tweens.add({
       targets: this.readyIcon,
@@ -147,8 +169,7 @@ export class CookingStation {
       yoyo: true,
       ease: "Sine.Out",
     });
-    this.onFoodReady?.(this, completedTicket);
-    this.startNextIfIdle();
+    this.startAvailableTickets();
   }
 
   public takeReadyTicket(): CookingTicket | undefined {
@@ -171,7 +192,7 @@ export class CookingStation {
   }
 
   public getQueueCount(): number {
-    return this.queue.length + Number(this.activeTicket !== undefined);
+    return this.queue.length + this.activeSlots.length;
   }
 
   public reassignTicketCustomer(
@@ -199,11 +220,11 @@ export class CookingStation {
       if (ticket !== undefined) this.readyTickets[readyIndex] = reassign(ticket);
       return ticket !== undefined;
     }
-    if (
-      this.activeTicket?.customerId === fromCustomerId
-      && this.activeTicket.quantity === quantity
-    ) {
-      this.activeTicket = reassign(this.activeTicket);
+    const activeSlot = this.activeSlots.find(
+      (slot) => slot.ticket.customerId === fromCustomerId && slot.ticket.quantity === quantity,
+    );
+    if (activeSlot !== undefined) {
+      activeSlot.ticket = reassign(activeSlot.ticket);
       return true;
     }
     return false;
@@ -223,44 +244,88 @@ export class CookingStation {
         if (ticket !== undefined) cancelled.push(ticket);
       }
     }
-    if (this.activeTicket?.customerId === customerId) {
-      cancelled.push(this.activeTicket);
-      this.activeTicket = undefined;
-      this.elapsedMs = 0;
-      this.progressBackground.setVisible(false);
-      this.progressFill.setVisible(false);
-      this.startNextIfIdle();
+    for (let index = this.activeSlots.length - 1; index >= 0; index -= 1) {
+      const slot = this.activeSlots[index];
+      if (slot?.ticket.customerId === customerId) {
+        const [removed] = this.activeSlots.splice(index, 1);
+        if (removed !== undefined) cancelled.push(removed.ticket);
+      }
     }
+    this.progressBackground.setVisible(this.activeSlots.length > 0);
+    this.progressFill.setVisible(this.activeSlots.length > 0);
+    this.startAvailableTickets();
     this.readyIcon.setVisible(this.readyTickets.length > 0);
     return cancelled;
   }
 
+  public cancelOneTicketForCustomer(
+    customerId: string,
+    quantity = 1,
+  ): CookingTicket | undefined {
+    const queueIndex = this.queue.findIndex(
+      (ticket) => ticket.customerId === customerId && ticket.quantity === quantity,
+    );
+    if (queueIndex >= 0) {
+      const [ticket] = this.queue.splice(queueIndex, 1);
+      return ticket;
+    }
+    const activeIndex = this.activeSlots.findIndex(
+      (slot) => slot.ticket.customerId === customerId && slot.ticket.quantity === quantity,
+    );
+    if (activeIndex >= 0) {
+      const [slot] = this.activeSlots.splice(activeIndex, 1);
+      this.progressBackground.setVisible(this.activeSlots.length > 0);
+      this.progressFill.setVisible(this.activeSlots.length > 0);
+      this.startAvailableTickets();
+      return slot?.ticket;
+    }
+    const readyIndex = this.readyTickets.findIndex(
+      (ticket) => ticket.customerId === customerId && ticket.quantity === quantity,
+    );
+    if (readyIndex >= 0) {
+      const [ticket] = this.readyTickets.splice(readyIndex, 1);
+      this.readyIcon.setVisible(this.readyTickets.length > 0);
+      return ticket;
+    }
+    return undefined;
+  }
+
   public getActiveTicket(): CookingTicket | undefined {
-    return this.activeTicket;
+    return this.activeSlots[0]?.ticket;
+  }
+
+  public getActiveTickets(): readonly CookingTicket[] {
+    return this.activeSlots.map((slot) => slot.ticket);
+  }
+
+  public getActiveCount(): number {
+    return this.activeSlots.length;
+  }
+
+  public hasPendingCookingForChef(workerId: string): boolean {
+    return this.queue.some((ticket) => ticket.chefWorkerId === workerId)
+      || this.activeSlots.some((slot) => slot.ticket.chefWorkerId === workerId);
   }
 
   public distanceTo(x: number, y: number): number {
     return Phaser.Math.Distance.Between(this.x, this.y, x, y);
   }
 
-  private startNextIfIdle(): void {
-    if (
-      this.activeTicket !== undefined
-      || this.queue.length === 0
-      || this.canStartNextResolver?.() === false
-    ) {
-      return;
+  private startAvailableTickets(): void {
+    while (this.activeSlots.length < this.parallelSlotCount && this.queue.length > 0) {
+      const queueIndex = this.queue.findIndex(
+        (ticket) => this.canStartNextResolver?.(ticket) !== false,
+      );
+      if (queueIndex < 0) break;
+      const [ticket] = this.queue.splice(queueIndex, 1);
+      if (ticket === undefined) break;
+      const durationMs = ticket.cookingTimeMs
+        ?? this.cookingTimeResolver?.(ticket.quantity)
+        ?? getMenuItem(ticket.menuItemId).cookingTimeMs * this.speedMultiplier;
+      this.activeSlots.push({ ticket, elapsedMs: 0, durationMs });
+      this.progressFill.width = 0;
+      this.progressBackground.setVisible(true);
+      this.progressFill.setVisible(true);
     }
-
-    this.activeTicket = this.queue.shift();
-    if (this.activeTicket === undefined) {
-      return;
-    }
-    this.elapsedMs = 0;
-    this.durationMs = this.cookingTimeResolver?.(this.activeTicket.quantity)
-      ?? getMenuItem(this.activeTicket.menuItemId).cookingTimeMs * this.speedMultiplier;
-    this.progressFill.width = 0;
-    this.progressBackground.setVisible(true);
-    this.progressFill.setVisible(true);
   }
 }

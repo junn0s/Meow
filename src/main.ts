@@ -4,8 +4,14 @@ import { BootScene } from "./game/scenes/BootScene";
 import { MenuScene } from "./game/scenes/MenuScene";
 import { GameScene } from "./game/scenes/GameScene";
 import { ResultScene } from "./game/scenes/ResultScene";
-import { RENDER_HEIGHT, RENDER_WIDTH } from "./game/art/Presentation";
+import {
+  RENDER_HEIGHT,
+  RENDER_WIDTH,
+  shouldUseMobilePowerProfile,
+} from "./game/art/Presentation";
 import { bindTouchControls } from "./game/input/TouchControls";
+
+const mobilePowerProfile = shouldUseMobilePowerProfile();
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
@@ -33,14 +39,29 @@ const config: Phaser.Types.Core.GameConfig = {
     pixelArt: true,
     antialias: false,
     roundPixels: true,
+    powerPreference: mobilePowerProfile ? "low-power" : "default",
   },
+  fps: mobilePowerProfile
+    ? { target: 30, limit: 30, min: 20, smoothStep: true }
+    : { target: 60, min: 30, smoothStep: true },
   scene: [BootScene, MenuScene, GameScene, ResultScene],
 };
 
 const game = new Phaser.Game(config);
 const removeTouchControls = bindTouchControls();
+const requestProgressSave = (): void => {
+  game.events.emit("app-before-unload");
+};
+
+window.addEventListener("pagehide", requestProgressSave);
+document.addEventListener("visibilitychange", () => {
+  game.events.emit("app-visibility-change", document.visibilityState === "hidden");
+  if (document.visibilityState === "hidden") {
+    requestProgressSave();
+  }
+});
 
 window.addEventListener("beforeunload", () => {
+  requestProgressSave();
   removeTouchControls();
-  game.events.emit("app-before-unload");
 });

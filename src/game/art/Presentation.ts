@@ -7,6 +7,12 @@ export const RENDER_WIDTH = LOGICAL_WIDTH * RENDER_SCALE;
 export const RENDER_HEIGHT = LOGICAL_HEIGHT * RENDER_SCALE;
 export const TEXT_RESOLUTION = RENDER_SCALE;
 
+export function shouldUseMobilePowerProfile(): boolean {
+  if (typeof window === "undefined" || typeof navigator === "undefined") return false;
+  return navigator.maxTouchPoints > 0
+    || window.matchMedia?.("(pointer: coarse)").matches === true;
+}
+
 const configuredTextFactories = new WeakSet<Phaser.GameObjects.GameObjectFactory>();
 
 /**

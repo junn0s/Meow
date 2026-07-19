@@ -13,6 +13,7 @@ export interface AtmosphereDiagnostics {
   readonly visibleParticles: number;
   readonly reducedMotion: boolean;
   readonly mode: ServiceLightMode;
+  readonly lowPowerMode: boolean;
 }
 
 /** Fixed-size, allocation-free atmosphere layers for the gameplay scene. */
@@ -25,11 +26,15 @@ export class AtmosphereSystem {
   private mode: ServiceLightMode = "normal";
   private reducedMotion: boolean;
 
-  public constructor(scene: Phaser.Scene, reducedMotion = false) {
+  public constructor(
+    scene: Phaser.Scene,
+    reducedMotion = false,
+    private readonly lowPowerMode = false,
+  ) {
     this.reducedMotion = reducedMotion;
-    this.lightRig = new LightRig(scene, reducedMotion);
+    this.lightRig = new LightRig(scene, reducedMotion, lowPowerMode);
     this.reflections = new ReflectionLayer(scene);
-    this.weather = new WeatherLayer(scene, reducedMotion);
+    this.weather = new WeatherLayer(scene, reducedMotion, lowPowerMode);
   }
 
   public update(deltaMs: number): void {
@@ -75,6 +80,7 @@ export class AtmosphereSystem {
       visibleParticles: this.weather.getVisibleCount(),
       reducedMotion: this.reducedMotion,
       mode: this.mode,
+      lowPowerMode: this.lowPowerMode,
     };
   }
 
@@ -92,7 +98,11 @@ class LightRig {
   private workerCount = 0;
   private activeCount = 0;
 
-  public constructor(scene: Phaser.Scene, reducedMotion: boolean) {
+  public constructor(
+    scene: Phaser.Scene,
+    reducedMotion: boolean,
+    private readonly lowPowerMode: boolean,
+  ) {
     this.scene = scene;
     this.reducedMotion = reducedMotion;
     for (let index = 0; index < MAX_DYNAMIC_LIGHTS; index += 1) {
@@ -124,7 +134,8 @@ class LightRig {
     const phaseVisible = phase === "night" || phase === "sunset" || phase === "dawn";
     const tierCount = phaseVisible ? tier * 3 : 0;
     const modeBonus = mode === "normal" ? 0 : 4;
-    this.activeCount = Math.min(MAX_DYNAMIC_LIGHTS, tierCount + this.workerCount + modeBonus);
+    const lightLimit = this.lowPowerMode ? 16 : MAX_DYNAMIC_LIGHTS;
+    this.activeCount = Math.min(lightLimit, tierCount + this.workerCount + modeBonus);
     const color = mode === "rush" ? 0xf15bd1 : mode === "fever" ? 0x45ffd2 : 0x38d7ff;
     const targetAlpha = phase === "night" ? 0.9 : phaseVisible ? 0.28 : 0;
     const duration = immediate ? 0 : this.reducedMotion ? 120 : 260;
@@ -187,7 +198,11 @@ class WeatherLayer {
   private phase: VisualPhase = "day";
   private reducedMotion: boolean;
 
-  public constructor(private readonly scene: Phaser.Scene, reducedMotion: boolean) {
+  public constructor(
+    private readonly scene: Phaser.Scene,
+    reducedMotion: boolean,
+    private readonly lowPowerMode: boolean,
+  ) {
     this.reducedMotion = reducedMotion;
     for (let index = 0; index < RAIN_PARTICLE_COUNT; index += 1) {
       this.rain.push(
@@ -221,7 +236,7 @@ class WeatherLayer {
   }
 
   public update(deltaMs: number): void {
-    const rainCount = this.reducedMotion ? 12 : RAIN_PARTICLE_COUNT;
+    const rainCount = this.reducedMotion ? 12 : this.lowPowerMode ? 24 : RAIN_PARTICLE_COUNT;
     const rainSpeed = this.reducedMotion ? 0.035 : 0.095;
     for (let index = 0; index < rainCount; index += 1) {
       const drop = this.rain[index];
@@ -230,7 +245,7 @@ class WeatherLayer {
       drop.y += deltaMs * rainSpeed;
       if (drop.y > 274) drop.setPosition(Phaser.Math.Between(20, 370), 34);
     }
-    const mistCount = this.reducedMotion ? 3 : MIST_PARTICLE_COUNT;
+    const mistCount = this.reducedMotion ? 3 : this.lowPowerMode ? 6 : MIST_PARTICLE_COUNT;
     for (let index = 0; index < mistCount; index += 1) {
       const fog = this.mist[index];
       if (fog === undefined || !fog.visible) continue;
@@ -263,10 +278,14 @@ class WeatherLayer {
 
   private refreshVisibility(): void {
     const rainy = this.phase === "night" || this.phase === "sunset";
-    const rainCount = rainy ? (this.reducedMotion ? 12 : RAIN_PARTICLE_COUNT) : 0;
+    const rainCount = rainy
+      ? (this.reducedMotion ? 12 : this.lowPowerMode ? 24 : RAIN_PARTICLE_COUNT)
+      : 0;
     this.rain.forEach((drop, index) => drop.setVisible(index < rainCount));
     const foggy = this.phase === "dawn";
-    const mistCount = foggy ? (this.reducedMotion ? 3 : MIST_PARTICLE_COUNT) : 0;
+    const mistCount = foggy
+      ? (this.reducedMotion ? 3 : this.lowPowerMode ? 6 : MIST_PARTICLE_COUNT)
+      : 0;
     this.mist.forEach((fog, index) => fog.setVisible(index < mistCount).setAlpha(foggy ? 0.12 : 0));
   }
 }
