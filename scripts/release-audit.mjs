@@ -5,10 +5,18 @@ const root = new URL("../", import.meta.url);
 const read = (path) => readFileSync(new URL(path, root), "utf8");
 
 const hosting = JSON.parse(read(".openai/hosting.json"));
+const manifest = JSON.parse(read("public/manifest.webmanifest"));
 assert.match(hosting.project_id ?? "", /^appgprj_/u, "Sites project id is required");
 assert.equal(hosting.d1, null);
 assert.equal(hosting.r2, null);
 assert.ok(existsSync(new URL("dist/client/index.html", root)), "production client build is missing");
+assert.ok(existsSync(new URL("dist/client/manifest.webmanifest", root)), "PWA manifest is missing");
+assert.ok(existsSync(new URL("dist/client/sw.js", root)), "generated service worker is missing");
+assert.ok(existsSync(new URL("dist/client/icons/icon-192.png", root)), "192px PWA icon is missing");
+assert.ok(existsSync(new URL("dist/client/icons/icon-512.png", root)), "512px PWA icon is missing");
+assert.equal(manifest.display, "standalone", "PWA must launch without browser chrome");
+assert.equal(manifest.start_url, "./", "PWA start URL must remain compatible with GitHub Pages subpaths");
+assert.deepEqual(manifest.icons.map((icon) => icon.sizes), ["192x192", "512x512"]);
 assert.ok(existsSync(new URL("dist/server/index.js", root)), "Sites worker build is missing");
 assert.ok(existsSync(new URL("dist/.openai/hosting.json", root)), "staged hosting metadata is missing");
 
@@ -22,6 +30,8 @@ assert.match(styles, /calc\(\(100dvh - 82px\) \* 16 \/ 9\)/u, "landscape control
 assert.match(styles, /-webkit-touch-callout: none/u, "iOS touch callouts must be disabled");
 assert.match(styles, /-webkit-user-select: none/u, "mobile controls must not select text");
 const html = read("index.html");
+assert.match(html, /rel="manifest"/u, "the PWA manifest must be linked from the app shell");
+assert.match(html, /rel="apple-touch-icon"/u, "iOS must receive a dedicated home-screen icon");
 assert.match(html, /aria-live="polite"/u);
 assert.match(html, /aria-label="모바일 게임 조작"/u);
 assert.match(html, /data-touch-direction="up"/u);
@@ -32,6 +42,7 @@ assert.match(touchControls, /visibilitychange/u, "hidden tabs must reset held di
 assert.match(touchControls, /selectstart/u, "native text selection must be blocked on controls");
 assert.match(touchControls, /dblclick/u, "double taps must not open native selection UI");
 const main = read("src/main.ts");
+assert.match(main, /registerServiceWorker/u, "production builds must register the offline worker");
 assert.doesNotMatch(main, /new KeyboardEvent/u, "touch must not rely on synthetic keyboard events");
 assert.match(main, /pagehide/u, "mobile page exits must request an immediate save");
 assert.match(main, /document\.visibilityState === "hidden"/u, "backgrounding the app must request a save");

@@ -6,7 +6,7 @@
   "description": "냥포차: 달빛 아래 야식당 — Phaser 3 pixel-art management game",
   "scripts": {
     "dev": "vite",
-    "build": "node scripts/clean-dist.mjs && tsc --noEmit && vite build && node scripts/prepare-sites-build.mjs",
+    "build": "node scripts/clean-dist.mjs && tsc --noEmit && vite build && node scripts/generate-pwa-worker.mjs && node scripts/prepare-sites-build.mjs",
     "typecheck": "tsc --noEmit",
     "test:foundation": "node scripts/run-foundation-tests.mjs",
     "simulate:balance": "node scripts/balance-simulator.mjs",

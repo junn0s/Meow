@@ -10,6 +10,7 @@ import {
   shouldUseMobilePowerProfile,
 } from "./game/art/Presentation";
 import { bindTouchControls } from "./game/input/TouchControls";
+import { registerServiceWorker } from "./pwa/registerServiceWorker";
 
 const mobilePowerProfile = shouldUseMobilePowerProfile();
 
@@ -49,6 +50,7 @@ const config: Phaser.Types.Core.GameConfig = {
 
 const game = new Phaser.Game(config);
 const removeTouchControls = bindTouchControls();
+registerServiceWorker();
 const requestProgressSave = (): void => {
   game.events.emit("app-before-unload");
 };
