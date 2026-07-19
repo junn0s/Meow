@@ -6,7 +6,14 @@
 
 [Play Meow Night Diner in your browser](https://junn0s.github.io/Meow/)
 
-The game runs directly in a modern desktop or mobile browser. No installation is required.
+The game runs directly in a modern desktop or mobile browser and can also be installed as a PWA.
+
+### Install on a Phone
+
+- iPhone or iPad: open the game in Safari, tap **Share**, choose **Add to Home Screen**, enable **Open as Web App**, and tap **Add**.
+- Android: open the game in Chrome, open the browser menu, then choose **Install app** or **Add to Home screen**.
+
+The installed game launches in a standalone window. Its core game files and menu music remain available offline after the first successful load; gameplay tracks continue to stream so mobile browsers can use efficient range requests.
 
 ## Gameplay
 
@@ -71,6 +78,7 @@ Before hiring workers, the owner cat handles orders and serving manually. Each c
 src/
 ├── main.ts                 # Phaser bootstrap and browser control bindings
 ├── styles.css              # Responsive page layout and mobile touch UI
+├── pwa/                    # Installability and service-worker registration
 ├── debug.d.ts              # Types for the optional browser debug API
 ├── vite-env.d.ts           # Vite environment type declarations
 ├── game/

@@ -22,10 +22,12 @@ import {
   type WorkerProgress,
 } from "../types/game";
 import { INITIAL_MONEY, INITIAL_RATING, MAX_RATING } from "./EconomySystem";
+import { normalizePerformanceMode } from "./PerformanceSystem";
 
-export const SAVE_DATA_VERSION = 3;
-export const DEFAULT_SAVE_KEY = "meow-night-diner.save.v3";
+export const SAVE_DATA_VERSION = 4;
+export const DEFAULT_SAVE_KEY = "meow-night-diner.save.v4";
 export const LEGACY_SAVE_KEYS = [
+  "meow-night-diner.save.v3",
   "meow-night-diner.save.v2",
   "meow-night-diner.save.v1",
   "meow-night-diner.save",
@@ -36,6 +38,9 @@ export const DEFAULT_GAME_SETTINGS: GameSettings = {
   musicVolume: 0.55,
   sfxVolume: 0.8,
   muted: false,
+  musicMuted: false,
+  sfxMuted: false,
+  performanceMode: "balanced",
   reducedMotion: false,
 };
 
@@ -534,6 +539,9 @@ function normalizeSettings(value: unknown, legacyMuted: unknown): GameSettings {
       settings.muted,
       normalizeBoolean(legacyMuted, false),
     ),
+    musicMuted: normalizeBoolean(settings.musicMuted, false),
+    sfxMuted: normalizeBoolean(settings.sfxMuted, false),
+    performanceMode: normalizePerformanceMode(settings.performanceMode),
     reducedMotion: normalizeBoolean(settings.reducedMotion, false),
   };
 }

@@ -15,6 +15,7 @@ export interface DinerDecor {
   setVisualTier(tier: VisualTier): void;
   setProgression(stage: GrowthStage, purchasedStepCount: number): void;
   setShopTier(tier: number): void;
+  setShopFacilities(facilityIds: readonly string[]): void;
   setReducedMotion(reducedMotion: boolean): void;
   celebrate(): void;
 }
@@ -43,6 +44,7 @@ export function createGameBackdrop(scene: Phaser.Scene): DinerDecor {
   let currentStage: GrowthStage = 1;
   let purchasedStepCount = 0;
   let shopTier = 0;
+  let shopFacilities = new Set<string>();
   const facilityDetails = scene.add.graphics().setDepth(6);
 
   const renderFacilityDetails = (): void => {
@@ -100,6 +102,62 @@ export function createGameBackdrop(scene: Phaser.Scene): DinerDecor {
     }
     if (shopTier >= 4) {
       facilityDetails.lineStyle(2, night ? 0x45ffd2 : 0xe5ad68, 0.95).strokeRoundedRect(287, 68, 47, 18, 4);
+    }
+    if (shopFacilities.has("copper-pot")) {
+      facilityDetails.fillStyle(0x5b332d, 1).fillCircle(31, 91, 7);
+      facilityDetails.fillStyle(0xd78345, 1).fillCircle(31, 90, 5);
+      facilityDetails.fillStyle(0xffbe6b, 0.9).fillRect(27, 88, 8, 2);
+    }
+    if (shopFacilities.has("double-burner")) {
+      facilityDetails.lineStyle(2, 0xff8c50, 0.9).strokeCircle(79, 91, 5).strokeCircle(93, 91, 5);
+    }
+    if (shopFacilities.has("prep-rack")) {
+      facilityDetails.fillStyle(0x8ca0aa, 0.9).fillRect(122, 65, 34, 2).fillRect(122, 72, 34, 2);
+    }
+    if (shopFacilities.has("soft-chair")) {
+      facilityDetails.fillStyle(0xa05d78, 0.95).fillRect(106, 188, 28, 5);
+    }
+    if (shopFacilities.has("wide-table")) {
+      facilityDetails.fillStyle(0xc88b55, 0.95).fillRect(150, 180, 50, 5);
+      facilityDetails.fillStyle(0x70402f, 1).fillRect(154, 185, 3, 8).fillRect(193, 185, 3, 8);
+    }
+    if (shopFacilities.has("moon-counter")) {
+      facilityDetails.fillStyle(0x384465, 1).fillRect(287, 68, 47, 18);
+      facilityDetails.lineStyle(2, night ? 0x45ffd2 : 0xe5ad68, 0.95).strokeRoundedRect(287, 68, 47, 18, 4);
+    }
+    if (shopFacilities.has("paper-lantern")) {
+      facilityDetails.fillStyle(night ? 0x55dbe3 : 0xf4b45f, 0.95).fillRect(15, 68, 7, 11).fillRect(328, 68, 7, 11);
+    }
+    if (shopFacilities.has("blue-canopy")) {
+      facilityDetails.fillStyle(night ? 0x315a91 : 0x4f87b8, 0.9).fillRect(5, 62, 340, 3);
+      for (let x = 8; x < 345; x += 24) facilityDetails.fillTriangle(x, 65, x + 20, 65, x + 10, 72);
+    }
+    if (shopFacilities.has("neon-set")) {
+      facilityDetails.lineStyle(2, night ? 0xf15bd1 : 0xdd776d, 0.95).strokeRoundedRect(139, 38, 72, 21, 5);
+    }
+    if (shopFacilities.has("moon-sign")) {
+      facilityDetails.fillStyle(0xffdf71, 0.95).fillCircle(214, 45, 6);
+      facilityDetails.fillStyle(night ? 0x171b35 : 0x8cc9d0, 1).fillCircle(217, 43, 6);
+    }
+    if (shopFacilities.has("lucky-cat")) {
+      facilityDetails.fillStyle(0xffe6b7, 1).fillRect(319, 171, 8, 11);
+      facilityDetails.fillStyle(0xd85c3e, 1).fillRect(321, 177, 4, 2);
+    }
+    if (shopFacilities.has("festival-drum")) {
+      facilityDetails.fillStyle(0x7a3438, 1).fillCircle(224, 188, 8);
+      facilityDetails.lineStyle(2, 0xffd45c, 1).strokeCircle(224, 188, 6);
+    }
+    if (shopFacilities.has("night-ledger")) {
+      facilityDetails.fillStyle(0x263b76, 1).fillRect(299, 91, 14, 10);
+      facilityDetails.fillStyle(0xffd45c, 1).fillRect(302, 94, 8, 1).fillRect(302, 97, 6, 1);
+    }
+    if (shopFacilities.has("chef-uniform") || shopFacilities.has("server-uniform")) {
+      facilityDetails.fillStyle(0x6e4a35, 1).fillRect(255, 171, 30, 2);
+      if (shopFacilities.has("chef-uniform")) facilityDetails.fillStyle(0x8ff0df, 1).fillRect(258, 173, 9, 11);
+      if (shopFacilities.has("server-uniform")) facilityDetails.fillStyle(0xff9dcd, 1).fillRect(273, 173, 9, 11);
+    }
+    if (shopFacilities.has("staff-badge")) {
+      facilityDetails.fillStyle(0xffdf71, 1).fillRect(269, 168, 3, 3);
     }
   };
 
@@ -169,6 +227,10 @@ export function createGameBackdrop(scene: Phaser.Scene): DinerDecor {
     },
     setShopTier(tier): void {
       shopTier = Math.max(0, Math.min(4, Math.floor(tier)));
+      renderFacilityDetails();
+    },
+    setShopFacilities(facilityIds): void {
+      shopFacilities = new Set(facilityIds);
       renderFacilityDetails();
     },
     setReducedMotion(reducedMotion): void {

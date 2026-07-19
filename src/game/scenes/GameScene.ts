@@ -1,24 +1,44 @@
 import Phaser from "phaser";
 import { createGameBackdrop, type DinerDecor, UI_FONT } from "../art/SceneDecor";
 import { AtmosphereSystem, type ServiceLightMode } from "../art/AtmosphereSystem";
-import { SoundManager } from "../audio/SoundManager";
+import { SoundManager, type SoundSettings } from "../audio/SoundManager";
 import { CookingStation, type CookingTicket } from "../entities/CookingStation";
 import { Customer } from "../entities/Customer";
 import { Player } from "../entities/Player";
 import { DiningTable } from "../entities/Table";
-import { getCustomerData, pickCustomerData } from "../data/customerData";
+import { CUSTOMER_DATA, getCustomerData, pickCustomerDataForKinds } from "../data/customerData";
 import { getMenuItem } from "../data/menuData";
 import { getStageConfig, WORKER_HIRE_CONFIGS } from "../data/progressionData";
 import { formatCompactNumber } from "../economy/economyMath";
 import { EconomySystem } from "../systems/EconomySystem";
 import { DayNightController } from "../systems/DayNightController";
 import { ProgressionSystem } from "../systems/ProgressionSystem";
-import { calculateOfflineReward } from "../systems/OfflineEarningsSystem";
-import { SaveSystem } from "../systems/SaveSystem";
-import { canStartCookingTicket } from "../systems/CookingFlowRules";
-import { CustomizationSystem, FACILITY_UPGRADES, OWNER_STYLES } from "../systems/CustomizationSystem";
+import {
+  calculateOfflineEfficiency,
+  calculateOfflineReward,
+  type OfflineRewardResult,
+} from "../systems/OfflineEarningsSystem";
+import { DEFAULT_GAME_SETTINGS, SaveSystem } from "../systems/SaveSystem";
+import { getFameBenefits, type FameBenefits } from "../systems/FameSystem";
+import {
+  getPerformanceModeLabel,
+  getPerformanceProfile,
+  type PerformanceProfile,
+} from "../systems/PerformanceSystem";
+import {
+  CustomizationSystem,
+  AVATAR_ITEMS,
+  FACILITY_UPGRADES,
+  OWNER_STYLES,
+  getFacilityRequiredFame,
+  getWorktopSlotUpgradeCost,
+  type AvatarCategory,
+  type AvatarLook,
+  type FacilityCategory,
+} from "../systems/CustomizationSystem";
 import {
   calculateOrderPatienceMs,
+  calculateSeatWaitPatienceMs,
   canReceiveFood,
   canSpawnCustomer,
   CUSTOMER_ARRIVAL_INTERVAL_MULTIPLIER,
@@ -28,6 +48,7 @@ import {
   CustomerState,
   type GrowthStage,
   type MenuItemId,
+  type PerformanceMode,
   type ProgressionEffects,
   type SaveData,
   type VisualPhase,
@@ -48,6 +69,7 @@ import { touchInput } from "../input/TouchControls";
 export interface GameSceneData {
   readonly newGame?: boolean;
   readonly muted?: boolean;
+  readonly audioSettings?: Partial<SoundSettings>;
 }
 
 interface PendingPayment {
@@ -57,6 +79,7 @@ interface PendingPayment {
   readonly tipRate: number;
   readonly vipMultiplier: number;
   readonly comboMultiplier: number;
+  readonly specialMultiplier: number;
   ageMs: number;
 }
 
@@ -79,12 +102,6 @@ interface WorkerAgent {
   assignedStationId?: MenuItemId;
 }
 
-interface OfflineRewardSummary {
-  readonly elapsedMs: number;
-  readonly amount: number;
-  readonly capped: boolean;
-}
-
 const TABLE_POSITIONS = [
   { x: 35, y: 142 }, { x: 105, y: 142 }, { x: 175, y: 142 }, { x: 245, y: 142 }, { x: 315, y: 142 },
   { x: 35, y: 187 }, { x: 105, y: 187 }, { x: 175, y: 187 }, { x: 245, y: 187 }, { x: 315, y: 187 },
@@ -100,7 +117,22 @@ const SERVER_HOME_POSITIONS = [
 ] as const;
 
 const AUTO_ORDER_DELAY_MS = 720;
-const SAVE_INTERVAL_MS = 4_000;
+const SAVE_INTERVAL_MS = 8_000;
+const MAX_POOLED_PAYMENTS = 24;
+const RUSH_CONFIGS: Partial<Record<GrowthStage, RushConfig>> = {
+  25: { periodMs: 90_000, durationMs: 25_000, spawnMultiplier: 0.65 },
+  26: { periodMs: 85_000, durationMs: 25_000, spawnMultiplier: 0.65 },
+  27: { periodMs: 80_000, durationMs: 27_000, spawnMultiplier: 0.62 },
+  28: { periodMs: 75_000, durationMs: 27_000, spawnMultiplier: 0.6 },
+  29: { periodMs: 70_000, durationMs: 30_000, spawnMultiplier: 0.58 },
+  30: { periodMs: 60_000, durationMs: 30_000, spawnMultiplier: 0.55 },
+};
+
+interface RushConfig {
+  readonly periodMs: number;
+  readonly durationMs: number;
+  readonly spawnMultiplier: number;
+}
 
 export class GameScene extends Phaser.Scene {
   private saveSystem!: SaveSystem;
@@ -124,6 +156,7 @@ export class GameScene extends Phaser.Scene {
   private readonly servers: WorkerAgent[] = [];
   private readonly chefAssignedCustomers = new Set<string>();
   private readonly serverTargetCustomerIds = new Set<string>();
+  private paymentPool!: Phaser.GameObjects.Group;
   private spawnCountdownMs = 850;
   private saveCountdownMs = SAVE_INTERVAL_MS;
   private elapsedMs = 0;
@@ -131,11 +164,17 @@ export class GameScene extends Phaser.Scene {
   private customerSerial = 0;
   private workerAnimationClock = 0;
   private workerAnimationFrame = 0;
+  private automationAccumulatorMs = 0;
+  private eventAccumulatorMs = 0;
+  private interactionAccumulatorMs = 0;
+  private presentationAccumulatorMs = 0;
   private interactionMarker!: Phaser.GameObjects.Image;
   private interactionText!: Phaser.GameObjects.Text;
   private currentInteraction?: InteractionTarget;
   private isPaused = false;
+  private appHidden = false;
   private pauseOverlay?: Phaser.GameObjects.Container;
+  private offlineOverlay?: Phaser.GameObjects.Container;
   private shopOverlay?: Phaser.GameObjects.Container;
   private readonly customization = new CustomizationSystem();
   private tutorialOverlay?: Phaser.GameObjects.Container;
@@ -153,9 +192,14 @@ export class GameScene extends Phaser.Scene {
   private promotionRemainingMs = 0;
   private promotionCountdownMs = 45_000;
   private promotionSerial = 0;
-  private offlineReward?: OfflineRewardSummary;
+  private offlineReward?: OfflineRewardResult;
   private reducedMotion = false;
-  private readonly frameSamples: number[] = [];
+  private mobilePowerProfile = false;
+  private performanceMode: PerformanceMode = "balanced";
+  private performanceProfile: PerformanceProfile = getPerformanceProfile("balanced", false);
+  private smoothedGameplayDeltaMs = 0;
+  private gameplayFrameCount = 0;
+  private feverWarningShown = false;
   private ticketStats = { accepted: 0, completed: 0, served: 0, cancelled: 0, wasted: 0, duplicateServices: 0 };
   private removeEconomyListener?: () => void;
   private removeProgressionListener?: () => void;
@@ -175,12 +219,15 @@ export class GameScene extends Phaser.Scene {
     const previousSave = this.saveSystem.load();
     this.currentSave = data.newGame === true
       ? this.saveSystem.newGame({
-          muted: data.muted ?? previousSave?.muted ?? false,
+          muted: data.audioSettings?.muted ?? data.muted ?? previousSave?.muted ?? false,
           settings: previousSave === null
-            ? undefined
+            ? data.audioSettings === undefined
+              ? undefined
+              : { ...DEFAULT_GAME_SETTINGS, ...data.audioSettings }
             : {
                 ...previousSave.settings,
-                muted: data.muted ?? previousSave.muted,
+                ...data.audioSettings,
+                muted: data.audioSettings?.muted ?? data.muted ?? previousSave.muted,
               },
           elapsedMs: 0,
         })
@@ -198,20 +245,26 @@ export class GameScene extends Phaser.Scene {
     this.currentEffects = this.progression.getEffects();
     this.reducedMotion = this.currentSave.settings.reducedMotion
       || window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
+    this.mobilePowerProfile = shouldUseMobilePowerProfile();
+    this.performanceMode = this.currentSave.settings.performanceMode;
+    this.performanceProfile = getPerformanceProfile(this.performanceMode, this.mobilePowerProfile);
+    applyGameLoopFpsLimit(this.game.loop, this.performanceProfile.targetFps);
     this.applyOfflineReward(previousSave, data.newGame === true);
     this.tutorialCompleted = this.currentSave.tutorialCompleted;
     this.elapsedMs = this.currentSave.elapsedMs;
-    this.sfx = new SoundManager(this.currentSave.muted);
+    this.sfx = new SoundManager(this.currentSave.settings);
     this.dayNight = new DayNightController(
       this.currentSave.worldClockMs,
       this.currentSave.visualTier,
     );
     this.decor = createGameBackdrop(this);
     this.decor.setShopTier(this.customization.getFacilityEffects().visualTier);
+    this.decor.setShopFacilities(this.customization.getOwnedFacilityIds());
     this.atmosphere = new AtmosphereSystem(
       this,
       this.reducedMotion,
-      shouldUseMobilePowerProfile(),
+      this.performanceMode,
+      this.mobilePowerProfile,
     );
     const initialVisualState = this.dayNight.getState();
     this.currentVisualPhase = initialVisualState.phase;
@@ -232,14 +285,16 @@ export class GameScene extends Phaser.Scene {
     this.createTables(this.currentEffects.seatCount + this.customization.getFacilityEffects().bonusSeats);
     this.player = new Player(this, 176, 128);
     this.player.setOwnerTint(this.customization.getSelected().tint);
+    this.player.setAvatarLook(this.customization.getAvatarLook());
     this.createWorkers();
+    this.createTransientPools();
     this.applyEffects(this.currentEffects, false);
     this.hud = new HUD(this);
     this.hud.setWorldTime(initialVisualState);
     this.upgradePanel = new UpgradePanel(this);
     this.toast = new ToastManager(this);
     new PixelButton(this, 325, 47, "상점", () => {
-      if (this.tutorialOverlay !== undefined || this.clearing) return;
+      if (this.tutorialOverlay !== undefined || this.offlineOverlay !== undefined || this.clearing) return;
       if (!this.isPaused) this.openPauseOverlay();
       this.openStyleShop();
     }, { width: 44, height: 18, primary: false, fontSize: 7 }).setDepth(920);
@@ -250,18 +305,10 @@ export class GameScene extends Phaser.Scene {
     this.configureDebugApi();
 
     if (this.offlineReward !== undefined && this.offlineReward.amount > 0) {
-      this.toast.show(
-        `쉬는 동안 +${formatCompactNumber(this.offlineReward.amount)}냥`,
-        "success",
-      );
       this.saveProgress();
-    }
-
-    if (!this.tutorialCompleted) {
-      this.showTutorial();
+      this.showOfflineRewardOverlay();
     } else {
-      this.time.delayedCall(350, () => this.spawnCustomer());
-      setStatus("영업을 시작했습니다. 방향키로 이동하고 스페이스바로 상호작용하세요.");
+      this.beginOpeningFlow();
     }
 
     this.game.events.on("app-before-unload", this.saveProgress, this);
@@ -272,39 +319,55 @@ export class GameScene extends Phaser.Scene {
 
   public override update(_time: number, deltaMs: number): void {
     const stepMs = Math.min(deltaMs, 64);
-    this.frameSamples.push(stepMs);
-    if (this.frameSamples.length > 120) this.frameSamples.shift();
+    this.smoothedGameplayDeltaMs = this.smoothedGameplayDeltaMs === 0
+      ? stepMs
+      : this.smoothedGameplayDeltaMs * 0.9 + stepMs * 0.1;
+    this.gameplayFrameCount += 1;
     this.hud.update(stepMs);
-    if (this.isPaused || this.tutorialOverlay !== undefined || this.clearing) {
+    if (this.appHidden || this.isPaused || this.tutorialOverlay !== undefined || this.clearing) {
       this.sfx.setMusicPaused(true);
       return;
     }
     this.sfx.setMusicPaused(false);
 
     this.elapsedMs += stepMs;
-    this.hud.setElapsedTime(this.elapsedMs);
-    const visualState = this.dayNight.update(stepMs);
-    if (visualState.phase !== this.currentVisualPhase) {
-      this.currentVisualPhase = visualState.phase;
-      this.decor.setPhase(visualState.phase);
-      this.atmosphere.setPhase(visualState.phase);
-      this.sfx.setAmbience(visualState.phase, this.reducedMotion, visualState.phaseTrackIndex, visualState.phaseElapsedMs);
-      for (const customer of this.customers.values()) {
-        customer.setNightMode(visualState.phase === "night");
+    this.presentationAccumulatorMs += stepMs;
+    const presentationIntervalMs = Math.max(50, this.performanceProfile.uiUpdateIntervalMs);
+    if (this.presentationAccumulatorMs >= presentationIntervalMs) {
+      const visualState = this.dayNight.update(this.presentationAccumulatorMs);
+      if (visualState.phase !== this.currentVisualPhase) {
+        this.currentVisualPhase = visualState.phase;
+        this.decor.setPhase(visualState.phase);
+        this.atmosphere.setPhase(visualState.phase);
+        this.sfx.setAmbience(visualState.phase, this.reducedMotion, visualState.phaseTrackIndex, visualState.phaseElapsedMs);
+        for (const customer of this.customers.values()) {
+          customer.setNightMode(visualState.phase === "night");
+        }
       }
+      this.hud.setElapsedTime(this.elapsedMs);
+      this.hud.setWorldTime(visualState);
+      this.presentationAccumulatorMs = 0;
     }
-    this.hud.setWorldTime(visualState);
     this.atmosphere.update(stepMs);
     this.player.update(stepMs);
     this.updateDebugTelemetry();
     this.updateCustomers(stepMs);
     this.updateStations(stepMs);
     this.updateWorkers(stepMs);
-    this.updateRush(stepMs);
-    this.updateFeverAndPromotion(stepMs);
+    this.eventAccumulatorMs += stepMs;
+    if (this.eventAccumulatorMs >= this.performanceProfile.automationUpdateIntervalMs) {
+      const eventDeltaMs = this.eventAccumulatorMs;
+      this.eventAccumulatorMs = 0;
+      this.updateRush(eventDeltaMs);
+      this.updateFeverAndPromotion(eventDeltaMs);
+    }
     this.updatePayments(stepMs);
     this.updateSpawner(stepMs);
-    this.updateInteractionIndicator();
+    this.interactionAccumulatorMs += stepMs;
+    if (this.interactionAccumulatorMs >= this.performanceProfile.interactionUpdateIntervalMs) {
+      this.interactionAccumulatorMs = 0;
+      this.updateInteractionIndicator();
+    }
 
     this.saveCountdownMs -= stepMs;
     if (this.saveCountdownMs <= 0) {
@@ -327,8 +390,14 @@ export class GameScene extends Phaser.Scene {
     this.customerSerial = 0;
     this.workerAnimationClock = 0;
     this.workerAnimationFrame = 0;
+    this.automationAccumulatorMs = 0;
+    this.eventAccumulatorMs = 0;
+    this.interactionAccumulatorMs = 0;
+    this.presentationAccumulatorMs = 0;
     this.isPaused = false;
+    this.appHidden = false;
     this.pauseOverlay = undefined;
+    this.offlineOverlay = undefined;
     this.shopOverlay = undefined;
     this.tutorialOverlay = undefined;
     this.tutorialStep = 0;
@@ -345,7 +414,9 @@ export class GameScene extends Phaser.Scene {
     this.promotionCountdownMs = 45_000;
     this.promotionSerial = 0;
     this.offlineReward = undefined;
-    this.frameSamples.length = 0;
+    this.feverWarningShown = false;
+    this.smoothedGameplayDeltaMs = 0;
+    this.gameplayFrameCount = 0;
     this.ticketStats = { accepted: 0, completed: 0, served: 0, cancelled: 0, wasted: 0, duplicateServices: 0 };
   }
 
@@ -369,18 +440,22 @@ export class GameScene extends Phaser.Scene {
       station.setCookingTimeResolver((quantity) =>
         this.progression.getMenuCookingTimeMs(definition.menuItemId, quantity)
           * this.customization.getFacilityEffects().cookingTimeMultiplier);
-      station.setCanStartNextResolver((ticket) => {
-        const activeTickets = [...this.stations.values()].flatMap(
-          (candidate) => [...candidate.getActiveTickets()],
-        );
-        return canStartCookingTicket(
-          ticket,
-          activeTickets,
-          this.currentEffects.cookingSlotCount,
-        );
-      });
+      station.setCanStartNextResolver((ticket) => this.canStartCookingTicket(ticket));
       this.stations.set(definition.menuItemId, station);
     }
+  }
+
+  private canStartCookingTicket(ticket: CookingTicket): boolean {
+    let activeCount = 0;
+    const cookingSlotCount = Math.max(1, Math.floor(this.currentEffects.cookingSlotCount));
+    for (const station of this.stations.values()) {
+      activeCount += station.getActiveCount();
+      if (
+        ticket.chefWorkerId !== undefined
+        && station.hasActiveCookingForChef(ticket.chefWorkerId)
+      ) return false;
+    }
+    return activeCount < cookingSlotCount;
   }
 
   private createTables(targetCount: number): void {
@@ -431,6 +506,37 @@ export class GameScene extends Phaser.Scene {
         homeY: serverY,
         busy: false,
       });
+    }
+  }
+
+  private createTransientPools(): void {
+    this.paymentPool = this.add.group({
+      classType: Phaser.GameObjects.Image,
+      maxSize: MAX_POOLED_PAYMENTS,
+      runChildUpdate: false,
+    });
+  }
+
+  private acquirePaymentImage(x: number, y: number): Phaser.GameObjects.Image {
+    const pooled = this.paymentPool.get(x, y, "coin") as Phaser.GameObjects.Image | null;
+    const image = pooled ?? this.add.image(x, y, "coin");
+    return image
+      .setPosition(x, y)
+      .setTexture("coin")
+      .setAlpha(1)
+      .setScale(1)
+      .setActive(true)
+      .setVisible(true)
+      .setDepth(520);
+  }
+
+  private releasePaymentImage(image: Phaser.GameObjects.Image): void {
+    this.tweens.killTweensOf(image);
+    if (this.paymentPool.contains(image)) {
+      this.paymentPool.killAndHide(image);
+      image.setAlpha(1).setScale(1);
+    } else {
+      image.destroy();
     }
   }
 
@@ -493,11 +599,12 @@ export class GameScene extends Phaser.Scene {
     this.scheduleNextSpawn();
   }
 
-  private spawnCustomer(forcedVip?: boolean): void {
+  private spawnCustomer(forcedVip?: boolean, forcedSpecialOrder?: boolean): void {
     if (this.clearing) {
       return;
     }
-    const data = pickCustomerData(Math.random());
+    const fame = this.getCurrentFameBenefits();
+    const data = pickCustomerDataForKinds(fame.unlockedCustomerKinds, Math.random());
     const stageConfig = getStageConfig(this.progression.getCurrentStage());
     const kindPatienceMultiplier = data.id === "rabbit"
       ? 0.8
@@ -506,14 +613,26 @@ export class GameScene extends Phaser.Scene {
         : data.id === "dog"
           ? 1.1
           : 1.2;
-    const vipChance = !this.currentEffects.vipUnlocked
-      ? 0
-      : this.progression.getCurrentStage() >= 30
-        ? 0.12
-        : this.progression.getCurrentStage() >= 26
-          ? 0.08
-          : 0.05;
-    const vip = forcedVip ?? Math.random() < vipChance;
+    const effectiveVipChance = Math.min(
+      0.3,
+      fame.vipChance + this.customization.getFacilityEffects().vipChanceBonus,
+    );
+    const vip = forcedVip ?? Math.random() < effectiveVipChance;
+    const specialOrder = forcedSpecialOrder ?? Math.random() < Math.min(
+      0.4,
+      fame.specialOrderChance + this.customization.getFacilityEffects().specialOrderChanceBonus,
+    );
+    let waitingIndex = 0;
+    for (const other of this.customers.values()) {
+      if (
+        other.customerState === CustomerState.ENTERING
+        || other.customerState === CustomerState.WAITING_FOR_SEAT
+      ) waitingIndex += 1;
+    }
+    const basePatienceMs = Math.round(
+      stageConfig.basePatienceMs * kindPatienceMultiplier * (vip ? 1.25 : 1)
+        * this.customization.getFacilityEffects().patienceMultiplier,
+    );
     this.customerSerial += 1;
     const customer = new Customer(
       this,
@@ -522,19 +641,12 @@ export class GameScene extends Phaser.Scene {
       -16,
       231,
       {
-        patienceMs: Math.round(
-          stageConfig.basePatienceMs * kindPatienceMultiplier * (vip ? 1.25 : 1)
-            * this.customization.getFacilityEffects().patienceMultiplier,
-        ),
+        patienceMs: calculateSeatWaitPatienceMs(basePatienceMs, waitingIndex),
         vip,
+        specialOrder,
         nightMode: this.currentVisualPhase === "night",
       },
     );
-    const waitingIndex = [...this.customers.values()].filter(
-      (other) =>
-        other.customerState === CustomerState.ENTERING ||
-        other.customerState === CustomerState.WAITING_FOR_SEAT,
-    ).length;
     customer.setTarget(20 + (waitingIndex % 3) * 15, 230 - Math.floor(waitingIndex / 3) * 18);
     customer.setCustomerState(CustomerState.ENTERING);
     this.customers.set(customer.customerId, customer);
@@ -553,7 +665,8 @@ export class GameScene extends Phaser.Scene {
       * CUSTOMER_ARRIVAL_INTERVAL_MULTIPLIER
       * jitter
       * rushMultiplier
-      * safetyMultiplier;
+      * safetyMultiplier
+      * this.customization.getFacilityEffects().customerArrivalMultiplier;
   }
 
   private configureRushForStage(stage: GrowthStage): void {
@@ -610,8 +723,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private updateCustomers(deltaMs: number): void {
-    const customers = [...this.customers.values()];
-    for (const customer of customers) {
+    for (const customer of this.customers.values()) {
       switch (customer.customerState) {
         case CustomerState.ENTERING:
           if (customer.updateMovement(deltaMs)) {
@@ -619,6 +731,11 @@ export class GameScene extends Phaser.Scene {
           }
           break;
         case CustomerState.WAITING_FOR_SEAT:
+          customer.tickPatience(deltaMs, this.performanceProfile.customerUiUpdateIntervalMs);
+          if (customer.patienceMs <= 0) {
+            this.handleCustomerWalkout(customer);
+            break;
+          }
           this.tryAssignSeat(customer);
           break;
         case CustomerState.MOVING_TO_SEAT:
@@ -627,14 +744,14 @@ export class GameScene extends Phaser.Scene {
           }
           break;
         case CustomerState.ORDERING:
-          customer.tickPatience(deltaMs);
+          customer.tickPatience(deltaMs, this.performanceProfile.customerUiUpdateIntervalMs);
           if (customer.patienceMs <= 0) {
             this.handleCustomerWalkout(customer);
             break;
           }
           break;
         case CustomerState.WAITING_FOR_FOOD:
-          customer.tickPatience(deltaMs);
+          customer.tickPatience(deltaMs, this.performanceProfile.customerUiUpdateIntervalMs);
           if (customer.patienceMs <= 0) {
             this.handleCustomerWalkout(customer);
           }
@@ -655,7 +772,7 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
-    for (const customer of customers) {
+    for (const customer of this.customers.values()) {
       if (customer.customerState === CustomerState.WAITING_FOR_SEAT) {
         this.tryAssignSeat(customer);
       }
@@ -743,15 +860,23 @@ export class GameScene extends Phaser.Scene {
   private createCustomerOrder(customer: Customer): void {
     const menuItemId = this.pickMenuForCustomer(customer);
     const quantity = this.pickOrderQuantity(customer);
-    const cookingTimeMs = this.progression.getMenuCookingTimeMs(menuItemId, quantity)
+    const singleServingCookingTimeMs = this.progression.getMenuCookingTimeMs(menuItemId)
       * this.customization.getFacilityEffects().cookingTimeMultiplier;
+    const station = this.stations.get(menuItemId);
     const patienceBudgetMs = calculateOrderPatienceMs(
-      customer.patienceMs,
-      cookingTimeMs,
+      customer.maxPatienceMs,
+      singleServingCookingTimeMs,
       quantity,
+      {
+        kitchenQueueDelayMs: station?.getEstimatedQueueDelayMs() ?? singleServingCookingTimeMs,
+        manualOrderTaking: this.currentEffects.chefCount === 0,
+      },
     ) * (customer.isVip ? 1.2 : 1);
     customer.placeOrder(menuItemId, quantity, patienceBudgetMs);
-    setStatus(`${getCustomerData(customer.kind).name} 손님이 ${getMenuItem(menuItemId).name}을 주문하려 합니다.`);
+    if (customer.isSpecialOrder) {
+      this.toast.show(`★ 특별 주문 · ${getMenuItem(menuItemId).name} ×${quantity}`, "success");
+    }
+    setStatus(`${customer.isSpecialOrder ? "특별 " : ""}${getCustomerData(customer.kind).name} 손님이 ${getMenuItem(menuItemId).name}을 주문하려 합니다.`);
   }
 
   private pickMenuForCustomer(customer: Customer): MenuItemId {
@@ -789,13 +914,8 @@ export class GameScene extends Phaser.Scene {
     const one = Math.max(0, (probabilities[0] ?? 1) - raccoonBoost);
     const two = Math.min(1, (probabilities[1] ?? 0) + raccoonBoost * 0.75);
     const roll = Math.random();
-    if (roll < one) {
-      return 1;
-    }
-    if (roll < one + two) {
-      return 2;
-    }
-    return 3;
+    const quantity = roll < one ? 1 : roll < one + two ? 2 : 3;
+    return customer.isSpecialOrder ? Math.max(2, quantity) : quantity;
   }
 
   private acceptOrder(customer: Customer, automated: boolean, chefWorkerId?: string): boolean {
@@ -816,12 +936,15 @@ export class GameScene extends Phaser.Scene {
     );
     customer.acceptOrder();
     for (let serving = 1; serving <= customer.orderQuantity; serving += 1) {
+      const servingChefWorkerId = serving === 1
+        ? chefWorkerId
+        : this.claimExtraChefForCooking(customer, station);
       const ticket: CookingTicket = {
         customerId: customer.customerId,
         menuItemId: customer.orderId,
         quantity: 1,
         cookingTimeMs: perServingCookingTimeMs,
-        chefWorkerId,
+        chefWorkerId: servingChefWorkerId,
       };
       station.enqueue(ticket);
       this.ticketStats.accepted += 1;
@@ -837,7 +960,7 @@ export class GameScene extends Phaser.Scene {
           x: station.x,
           y: station.y + 18,
           duration: 220,
-          onUpdate: () => chef.sprite.setDepth(70 + Math.round(chef.sprite.y)),
+          onUpdate: () => updateCharacterDepth(chef.sprite, 70),
         });
         this.pulseWorker(chef.sprite);
       }
@@ -848,49 +971,82 @@ export class GameScene extends Phaser.Scene {
     return true;
   }
 
+  private claimExtraChefForCooking(
+    customer: Customer,
+    station: CookingStation,
+  ): string | undefined {
+    const chef = this.chefs.find((worker) => worker.sprite.visible && !worker.busy);
+    if (chef === undefined) return undefined;
+    chef.busy = true;
+    chef.assignedCustomerId = customer.customerId;
+    chef.assignedStationId = station.menuItemId;
+    chef.sprite.setTexture(`chef-${chef.ordinal}-1`).setFlipX(station.x < chef.sprite.x);
+    this.tweens.add({
+      targets: chef.sprite,
+      x: station.x + 10,
+      y: station.y + 18,
+      duration: 220,
+      onUpdate: () => updateCharacterDepth(chef.sprite, 70),
+    });
+    return chef.id;
+  }
+
   private updateStations(deltaMs: number): void {
+    const cookingSpeed = this.progression.getFeverCookingSpeedMultiplier();
     for (const station of this.stations.values()) {
-      station.update(deltaMs);
+      station.update(deltaMs * cookingSpeed);
     }
   }
 
   private updateWorkers(deltaMs: number): void {
     this.workerAnimationClock += deltaMs;
-    if (this.workerAnimationClock >= 360) {
+    if (this.workerAnimationClock >= this.performanceProfile.workerAnimationIntervalMs) {
       this.workerAnimationClock = 0;
       this.workerAnimationFrame = this.workerAnimationFrame === 0 ? 1 : 0;
       for (const chef of this.chefs) {
+        if (!chef.sprite.visible) continue;
         chef.sprite.setTexture(`chef-${chef.ordinal}-${this.workerAnimationFrame}`);
       }
       for (const server of this.servers) {
+        if (!server.sprite.visible) continue;
         const frame = server.busy ? this.workerAnimationFrame : 0;
         server.sprite.setTexture(`server-${server.ordinal}-${frame}`);
       }
     }
+    this.automationAccumulatorMs += deltaMs;
+    if (this.automationAccumulatorMs < this.performanceProfile.automationUpdateIntervalMs) return;
+    this.automationAccumulatorMs = 0;
     this.dispatchChefOrders();
     this.dispatchServerDeliveries();
   }
 
   private dispatchChefOrders(): void {
-    const ordering = [...this.customers.values()].filter(
-      (customer) => customer.customerState === CustomerState.ORDERING
-        && customer.stateElapsedMs >= AUTO_ORDER_DELAY_MS
-        && !this.chefAssignedCustomers.has(customer.customerId),
-    );
     for (const chef of this.chefs) {
       if (!chef.sprite.visible || chef.busy) continue;
-      const customer = ordering.shift();
+      let customer: Customer | undefined;
+      for (const candidate of this.customers.values()) {
+        if (
+          candidate.customerState === CustomerState.ORDERING
+          && candidate.stateElapsedMs >= AUTO_ORDER_DELAY_MS
+          && !this.chefAssignedCustomers.has(candidate.customerId)
+        ) {
+          customer = candidate;
+          break;
+        }
+      }
       if (customer === undefined) break;
       chef.busy = true;
       chef.assignedCustomerId = customer.customerId;
       this.chefAssignedCustomers.add(customer.customerId);
-      const actionTime = getWorkerActionTimeMs("chef", chef.ordinal);
+      const actionTime = getWorkerActionTimeMs("chef", chef.ordinal)
+        * this.customization.getFacilityEffects().chefActionTimeMultiplier
+        / this.progression.getFeverWorkerSpeedMultiplier();
       this.tweens.add({
         targets: chef.sprite,
         x: customer.x - 15,
         y: customer.y,
         duration: Math.min(320, actionTime * 0.35),
-        onUpdate: () => chef.sprite.setDepth(70 + Math.round(chef.sprite.y)),
+        onUpdate: () => updateCharacterDepth(chef.sprite, 70),
       });
       this.time.delayedCall(actionTime, () => {
         this.chefAssignedCustomers.delete(customer.customerId);
@@ -940,14 +1096,16 @@ export class GameScene extends Phaser.Scene {
       .setTexture(`server-${worker.ordinal}-1`)
       .setDepth(300)
       .setFlipX(station.x < server.x);
-    const actionTime = getWorkerActionTimeMs("server", worker.ordinal);
+    const actionTime = getWorkerActionTimeMs("server", worker.ordinal)
+      * this.customization.getFacilityEffects().serverActionTimeMultiplier
+      / this.progression.getFeverWorkerSpeedMultiplier();
     this.tweens.add({
       targets: server,
       x: station.x + 19,
       y: station.y + 20,
       duration: Math.round(actionTime * 0.2),
       ease: "Sine.InOut",
-      onUpdate: () => server.setDepth(50 + Math.round(server.y)),
+      onUpdate: () => updateCharacterDepth(server, 50),
       onComplete: () => {
         if (!server.active || !canReceiveFood(target, ticket)) {
           if (ticket.customerId === target.customerId) {
@@ -965,7 +1123,7 @@ export class GameScene extends Phaser.Scene {
           y: target.y,
           duration: Math.round(actionTime * 0.45),
           ease: "Sine.InOut",
-          onUpdate: () => server.setDepth(50 + Math.round(server.y)),
+          onUpdate: () => updateCharacterDepth(server, 50),
           onComplete: () => {
             if (target.active && canReceiveFood(target, ticket)) {
               this.serveCustomer(target, true, worker, ticket);
@@ -984,7 +1142,7 @@ export class GameScene extends Phaser.Scene {
               y: worker.homeY,
               duration: Math.round(actionTime * 0.25),
               ease: "Sine.InOut",
-              onUpdate: () => server.setDepth(50 + Math.round(server.y)),
+              onUpdate: () => updateCharacterDepth(server, 50),
               onComplete: () => this.releaseServer(worker, false),
             });
           },
@@ -1057,10 +1215,17 @@ export class GameScene extends Phaser.Scene {
     }
     const ratio = customer.getPatienceRatio();
     const data = getCustomerData(customer.kind);
+    const fame = this.getCurrentFameBenefits();
+    const facilityEffects = this.customization.getFacilityEffects();
+    const facilityTipBonus = facilityEffects.tipChanceBonus
+      + fame.tipChanceBonus
+      + this.progression.getFeverTipChanceBonus()
+      + (this.currentVisualPhase === "night" ? facilityEffects.nightTipChanceBonus : 0)
+      + (customer.isSpecialOrder ? 0.25 : 0);
     const tipChance = ratio >= 0.75
-      ? Math.min(1, data.tipChance + 0.25)
+      ? Math.min(1, data.tipChance + 0.25 + facilityTipBonus)
       : ratio >= 0.45
-        ? data.tipChance
+        ? Math.min(1, data.tipChance + facilityTipBonus)
         : 0;
     const tipRate = customer.isVip || Math.random() >= tipChance
       ? 0
@@ -1078,9 +1243,10 @@ export class GameScene extends Phaser.Scene {
         : this.comboCount >= 5
           ? 1.05
           : 1;
-    const image = this.add
-      .image(table?.seatPosition.x ?? customer.x, (table?.seatPosition.y ?? customer.y) + 4, "coin")
-      .setDepth(520);
+    const image = this.acquirePaymentImage(
+      table?.seatPosition.x ?? customer.x,
+      (table?.seatPosition.y ?? customer.y) + 4,
+    );
     this.tweens.add({
       targets: image,
       y: image.y - 3,
@@ -1096,6 +1262,7 @@ export class GameScene extends Phaser.Scene {
       tipRate,
       vipMultiplier: customer.isVip ? 2 : 1,
       comboMultiplier,
+      specialMultiplier: customer.isSpecialOrder ? 1.25 : 1,
       ageMs: 0,
     });
     if (ratio >= 0.48) {
@@ -1112,12 +1279,9 @@ export class GameScene extends Phaser.Scene {
         continue;
       }
       payment.ageMs += deltaMs;
-      const playerReached = Phaser.Math.Distance.Between(
-        this.player.x,
-        this.player.y,
-        payment.image.x,
-        payment.image.y,
-      ) <= 16;
+      const distanceX = this.player.x - payment.image.x;
+      const distanceY = this.player.y - payment.image.y;
+      const playerReached = distanceX * distanceX + distanceY * distanceY <= 256;
       const autoCollect = this.currentEffects.serverHired && payment.ageMs >= 650;
       if (playerReached || autoCollect) {
         this.collectPayment(payment, index);
@@ -1127,7 +1291,9 @@ export class GameScene extends Phaser.Scene {
 
   private collectPayment(payment: PendingPayment, index: number): void {
     const promotionMultiplier = payment.menuItemId === this.promotionMenuId ? 1.25 : 1;
-    const feverMultiplier = this.progression.getFeverRevenueMultiplier() * promotionMultiplier;
+    const feverMultiplier = this.progression.getFeverRevenueMultiplier()
+      * promotionMultiplier
+      * payment.specialMultiplier;
     const result = this.economy.recordSale({
       unitPrice: this.progression.getMenuPrice(payment.menuItemId),
       quantity: payment.quantity,
@@ -1136,12 +1302,16 @@ export class GameScene extends Phaser.Scene {
       comboMultiplier: payment.comboMultiplier,
       feverMultiplier: feverMultiplier
         * this.customization.getFacilityEffects().revenueMultiplier
-        * this.currentEffects.fameRevenueMultiplier,
+        * getEffectiveFameRevenueMultiplier(this.currentEffects, this.customization.getFacilityEffects().fameBonus),
       ratingGain: 0,
     });
     const feverLevel = this.progression.getFeverState().level;
     const gaugePerSale = feverLevel === 1 ? 14 : feverLevel === 2 ? 12 : 10;
-    const feverResult = this.progression.addFeverGauge(gaugePerSale * payment.quantity);
+    const feverResult = this.progression.addFeverGauge(
+      gaugePerSale
+        * payment.quantity
+        * this.customization.getFacilityEffects().feverChargeMultiplier,
+    );
     if (feverResult.activated) {
       this.toast.show(`FEVER Lv.${feverResult.state.level} · 매출 폭발!`, "success");
       this.decor.celebrate();
@@ -1149,13 +1319,11 @@ export class GameScene extends Phaser.Scene {
     }
     const x = payment.image.x;
     const y = payment.image.y;
-    this.tweens.killTweensOf(payment.image);
-    payment.image.destroy();
+    this.releasePaymentImage(payment.image);
     this.pendingPayments.splice(index, 1);
     this.sfx.coin();
     this.hud.flashMoney(true);
     this.showMoneyPopup(x, y, result.totalAmount, result.tipAmount);
-    this.saveProgress();
     if (this.progression.isGameComplete()) {
       this.beginClearSequence();
     }
@@ -1164,7 +1332,16 @@ export class GameScene extends Phaser.Scene {
   private updateFeverAndPromotion(deltaMs: number): void {
     const feverTransition = this.progression.updateFever(deltaMs);
     const fever = this.progression.getFeverState();
-    if (feverTransition.ended) this.toast.show("피버 종료 · 다시 게이지를 채워요");
+    if (fever.activeRemainingMs > 3_000) this.feverWarningShown = false;
+    if (fever.activeRemainingMs > 0 && fever.activeRemainingMs <= 3_000 && !this.feverWarningShown) {
+      this.feverWarningShown = true;
+      this.toast.show("피버 종료 3초 전!", "warning");
+      this.cameras.main.flash(this.reducedMotion ? 80 : 160, 69, 255, 210, false);
+    }
+    if (feverTransition.ended) {
+      this.feverWarningShown = false;
+      this.toast.show("피버 종료 · 다시 게이지를 채워요");
+    }
     this.hud.setFever(fever.level, fever.gauge, fever.activeRemainingMs);
 
     if (this.promotionRemainingMs > 0) {
@@ -1183,7 +1360,7 @@ export class GameScene extends Phaser.Scene {
         `${getMenuItem(this.promotionMenuId).name} ${Math.ceil(this.promotionRemainingMs / 1_000)}s`,
       );
     }
-    this.refreshServiceLightMode();
+    this.refreshServiceLightMode(fever.activeRemainingMs > 0);
   }
 
   private startMenuPromotion(menuItemId?: MenuItemId): boolean {
@@ -1199,13 +1376,16 @@ export class GameScene extends Phaser.Scene {
     return true;
   }
 
-  private refreshServiceLightMode(): void {
+  private refreshServiceLightMode(
+    feverActive = this.progression.getFeverState().activeRemainingMs > 0,
+  ): void {
     const mode: ServiceLightMode = this.rushRemainingMs > 0
       ? "rush"
-      : this.progression.getFeverState().activeRemainingMs > 0
+      : feverActive
         ? "fever"
         : "normal";
     this.atmosphere.setServiceMode(mode);
+    this.sfx.setFeverActive(feverActive);
   }
 
   private showMoneyPopup(x: number, y: number, amount: number, tip: number): void {
@@ -1295,14 +1475,16 @@ export class GameScene extends Phaser.Scene {
     }
 
     let nearestStation: CookingStation | undefined;
-    let nearestDistance = Number.POSITIVE_INFINITY;
+    let nearestDistanceSquared = 39 * 39;
     for (const station of this.stations.values()) {
       if (station.getReadyCount() === 0) {
         continue;
       }
-      const distance = station.distanceTo(this.player.x, this.player.y);
-      if (distance <= 39 && distance < nearestDistance) {
-        nearestDistance = distance;
+      const distanceX = station.x - this.player.x;
+      const distanceY = station.y - this.player.y;
+      const distanceSquared = distanceX * distanceX + distanceY * distanceY;
+      if (distanceSquared <= nearestDistanceSquared) {
+        nearestDistanceSquared = distanceSquared;
         nearestStation = station;
       }
     }
@@ -1322,15 +1504,17 @@ export class GameScene extends Phaser.Scene {
     maximumDistance: number,
   ): Customer | undefined {
     let nearest: Customer | undefined;
-    let nearestDistance = maximumDistance;
+    let nearestDistanceSquared = maximumDistance * maximumDistance;
     for (const customer of this.customers.values()) {
       if (!predicate(customer)) {
         continue;
       }
-      const distance = Phaser.Math.Distance.Between(this.player.x, this.player.y, customer.x, customer.y);
-      if (distance <= nearestDistance) {
+      const distanceX = this.player.x - customer.x;
+      const distanceY = this.player.y - customer.y;
+      const distanceSquared = distanceX * distanceX + distanceY * distanceY;
+      if (distanceSquared <= nearestDistanceSquared) {
         nearest = customer;
-        nearestDistance = distance;
+        nearestDistanceSquared = distanceSquared;
       }
     }
     return nearest;
@@ -1369,7 +1553,8 @@ export class GameScene extends Phaser.Scene {
     for (const [menuItemId, station] of this.stations) {
       station.setUnlocked(effects.unlockedMenuIds.includes(menuItemId));
       station.setSpeedMultiplier(1);
-      station.setParallelSlotCount(effects.cookingSlotCount);
+      const worktopSlots = this.customization.getWorktopSlotCount(menuItemId);
+      station.setParallelSlotCount(worktopSlots);
       const menuProgress = progressionState.menuProgress.find(
         (menu) => menu.menuItemId === menuItemId,
       );
@@ -1378,16 +1563,25 @@ export class GameScene extends Phaser.Scene {
           `${formatCompactNumber(this.progression.getMenuPrice(menuItemId))}냥`,
           menuProgress.priceLevel,
           menuProgress.speedLevel,
-          effects.cookingSlotCount,
+          worktopSlots,
         );
       }
     }
-    this.chefs.forEach((worker, index) => worker.sprite.setVisible(index < effects.chefCount));
-    this.servers.forEach((worker, index) => worker.sprite.setVisible(index < effects.serverCount));
+    const facilityEffects = this.customization.getFacilityEffects();
+    this.chefs.forEach((worker, index) => {
+      worker.sprite.setVisible(index < effects.chefCount);
+      if (facilityEffects.chefTint === undefined) worker.sprite.clearTint();
+      else worker.sprite.setTint(facilityEffects.chefTint);
+    });
+    this.servers.forEach((worker, index) => {
+      worker.sprite.setVisible(index < effects.serverCount);
+      if (facilityEffects.serverTint === undefined) worker.sprite.clearTint();
+      else worker.sprite.setTint(facilityEffects.serverTint);
+    });
     this.atmosphere?.setWorkerCounts(effects.chefCount, effects.serverCount);
-    if (effects.finalFacilityPurchased) {
+    if (effects.finalFacilityPurchased || this.customization.isFacilityOwned("moon-sign")) {
       this.decor.setSign("moon");
-    } else if (this.progression.getVisualTier() >= 3) {
+    } else if (this.progression.getVisualTier() >= 3 || this.customization.isFacilityOwned("neon-set")) {
       this.decor.setSign("neon");
     } else {
       this.decor.setSign("stall");
@@ -1432,6 +1626,7 @@ export class GameScene extends Phaser.Scene {
     const state = this.economy.getState();
     this.hud.setMoney(state.money, animateMoney);
     this.hud.setRating(state.rating);
+    this.hud.setFame(this.getCurrentFameBenefits().level);
     this.hud.setCustomerCount(state.customerCount);
     const fever = this.progression.getFeverState();
     this.hud.setFever(fever.level, fever.gauge, fever.activeRemainingMs);
@@ -1455,6 +1650,13 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  private getCurrentFameBenefits(): FameBenefits {
+    return getFameBenefits(
+      this.currentEffects.fameLevel,
+      this.customization.getFacilityEffects().fameBonus,
+    );
+  }
+
   private openPauseOverlay(): void {
     this.isPaused = true;
     this.player.setFrozen(true);
@@ -1471,7 +1673,7 @@ export class GameScene extends Phaser.Scene {
       })
       .setOrigin(0.5);
     const subtitle = this.add
-      .text(240, 94, "진행 상황은 자동으로 저장돼요", {
+      .text(240, 94, this.getSaveStatusText(), {
         fontFamily: UI_FONT,
         fontSize: "8px",
         color: "#a7b2d1",
@@ -1483,38 +1685,36 @@ export class GameScene extends Phaser.Scene {
       primary: true,
       fontSize: 9,
     });
-    const mute = new PixelButton(
+    const soundSettings = new PixelButton(
       this,
       240,
       155,
-      this.sfx.isMuted ? "소리 켜기 (M)" : "소리 끄기 (M)",
-      () => {
-        this.toggleMute();
-        mute.setText(this.sfx.isMuted ? "소리 켜기 (M)" : "소리 끄기 (M)");
-      },
+      "사운드 설정",
+      () => this.openSoundSettings(),
       { width: 126, height: 24, primary: false, fontSize: 8 },
     );
-    const motion = new PixelButton(
+    const performance = new PixelButton(
       this,
-      292,
+      320,
       184,
-      this.reducedMotion ? "움직임 기본으로" : "움직임 줄이기",
-      () => {
-        this.setReducedMotion(!this.reducedMotion);
-        motion.setText(this.reducedMotion ? "움직임 기본으로" : "움직임 줄이기");
-      },
-      { width: 90, height: 24, primary: false, fontSize: 7 },
+      "성능 설정",
+      () => this.openPerformanceSettings(),
+      { width: 72, height: 24, primary: false, fontSize: 7 },
     );
-    const shop = new PixelButton(this, 188, 184, "외형 상점", () => this.openStyleShop(), {
-      width: 90, height: 24, primary: false, fontSize: 8,
+    const shop = new PixelButton(this, 160, 184, "상점", () => this.openStyleShop(), {
+      width: 72, height: 24, primary: false, fontSize: 8,
+    });
+    const managementInfo = new PixelButton(this, 240, 184, "명성·피버", () => this.openManagementInfo(), {
+      width: 72, height: 24, primary: true, fontSize: 7,
     });
     const saveButton = new PixelButton(this, 188, 214, "지금 저장", () => {
       this.saveProgress();
       this.sfx.click();
-      subtitle.setText("저장 완료! 이제 안전하게 나가도 돼요");
+      subtitle.setText(`저장 완료 · ${formatClockTime(this.currentSave.lastSavedAt)}`);
+      this.toast.show("진행 상황을 저장했어요", "success");
       this.time.delayedCall(1_500, () => {
         if (subtitle.active) {
-          subtitle.setText("진행 상황은 자동으로 저장돼요");
+          subtitle.setText(this.getSaveStatusText());
         }
       });
       setStatus("게임 진행 상황을 수동으로 저장했습니다.");
@@ -1524,9 +1724,83 @@ export class GameScene extends Phaser.Scene {
       this.scene.start("MenuScene");
     }, { width: 90, height: 22, primary: false, fontSize: 8 });
     this.pauseOverlay = this.add
-      .container(0, 0, [shade, panel, title, subtitle, resume, mute, shop, motion, saveButton, titleButton])
+      .container(0, 0, [shade, panel, title, subtitle, resume, soundSettings, shop, managementInfo, performance, saveButton, titleButton])
       .setDepth(3_000);
     setStatus("게임이 일시정지되었습니다.");
+  }
+
+  private getSaveStatusText(): string {
+    return `자동저장 ${SAVE_INTERVAL_MS / 1_000}초 · 마지막 ${formatClockTime(this.currentSave.lastSavedAt)}`;
+  }
+
+  private beginOpeningFlow(): void {
+    if (!this.tutorialCompleted) {
+      this.showTutorial();
+      return;
+    }
+    this.time.delayedCall(350, () => this.spawnCustomer());
+    setStatus("영업을 시작했습니다. 방향키로 이동하고 스페이스바로 상호작용하세요.");
+  }
+
+  private showOfflineRewardOverlay(): void {
+    const reward = this.offlineReward;
+    if (reward === undefined || reward.amount <= 0) {
+      this.beginOpeningFlow();
+      return;
+    }
+    this.isPaused = true;
+    this.player.setFrozen(true);
+    const bottleneckNames: Record<typeof reward.bottleneck, string> = {
+      kitchen: "주방 조리 속도",
+      service: "서빙 인력",
+      seating: "좌석 회전",
+      arrival: "손님 유입",
+    };
+    const shade = this.add.rectangle(240, 135, 480, 270, 0x080b18, 0.88);
+    const panel = this.add.rectangle(240, 137, 300, 188, 0x17213a, 1)
+      .setStrokeStyle(2, 0x45c6b8);
+    const moon = this.add.text(240, 61, "☾", {
+      fontFamily: UI_FONT,
+      fontSize: "22px",
+      color: "#8de6db",
+    }).setOrigin(0.5);
+    const title = this.add.text(240, 84, "알바생들이 영업했어요!", {
+      fontFamily: UI_FONT,
+      fontStyle: "bold",
+      fontSize: "14px",
+      color: "#fff0bd",
+    }).setOrigin(0.5);
+    const amount = this.add.text(240, 111, `+${formatCompactNumber(reward.amount)}냥`, {
+      fontFamily: UI_FONT,
+      fontStyle: "bold",
+      fontSize: "20px",
+      color: "#75e1a0",
+    }).setOrigin(0.5);
+    const details = this.add.text(
+      240,
+      148,
+      `${formatOfflineDuration(reward.elapsedMs)} 동안 자동 운영\n효율 ${Math.round(reward.efficiency * 100)}% · 병목: ${bottleneckNames[reward.bottleneck]}${reward.capped ? "\n최대 4시간까지만 정산했어요" : ""}`,
+      {
+        fontFamily: UI_FONT,
+        fontSize: "8px",
+        color: "#b9c5df",
+        align: "center",
+        lineSpacing: 3,
+      },
+    ).setOrigin(0.5);
+    const collect = new PixelButton(this, 240, 205, "정산받고 영업 시작", () => {
+      this.sfx.coin();
+      this.offlineOverlay?.destroy(true);
+      this.offlineOverlay = undefined;
+      this.isPaused = false;
+      this.player.setFrozen(false);
+      this.toast.show(`오프라인 수익 +${formatCompactNumber(reward.amount)}냥`, "success");
+      this.beginOpeningFlow();
+    }, { width: 150, height: 27, primary: true, fontSize: 8 });
+    this.offlineOverlay = this.add
+      .container(0, 0, [shade, panel, moon, title, amount, details, collect])
+      .setDepth(3_500);
+    setStatus(`오프라인 자동 운영 수익 ${reward.amount}냥을 정산했습니다.`);
   }
 
   private closePauseOverlay(): void {
@@ -1539,95 +1813,439 @@ export class GameScene extends Phaser.Scene {
     setStatus("영업을 계속합니다.");
   }
 
-  private openStyleShop(): void {
+  private openStyleShop(category: AvatarCategory = "fur"): void {
     if (this.shopOverlay !== undefined) return;
-    const shade = this.add.rectangle(240, 135, 480, 270, 0x080b18, 0.9);
-    const panel = this.add.rectangle(240, 137, 330, 190, 0x171e37, 1).setStrokeStyle(2, 0x45c6b8);
-    const title = this.add.text(240, 58, "주인공 털색 상점", {
-      fontFamily: UI_FONT, fontStyle: "bold", fontSize: "14px", color: "#fff0bd",
+    const shade = this.add.rectangle(240, 135, 480, 270, 0x070a17, 0.93);
+    const panel = this.add.rectangle(240, 137, 410, 220, 0x161d35, 1).setStrokeStyle(2, 0x53d8c8);
+    const header = this.add.rectangle(240, 48, 406, 38, 0x202947, 1);
+    const title = this.add.text(240, 42, "MOONLIGHT WARDROBE", {
+      fontFamily: UI_FONT, fontStyle: "bold", fontSize: "12px", color: "#fff0bd",
     }).setOrigin(0.5);
-    const items: Phaser.GameObjects.GameObject[] = [shade, panel, title];
-    OWNER_STYLES.forEach((style, index) => {
-      const owned = this.customization.isOwned(style.id);
-      const button = new PixelButton(this, 240, 92 + index * 29,
-        `${style.name} · ${owned ? "장착" : `${formatCompactNumber(style.cost)}냥`}`,
-        () => {
-          const result = this.customization.purchaseOrEquip(style.id, this.economy);
-          if (result === "insufficient") {
-            this.toast.show("털색을 사기엔 돈이 부족해요", "warning");
-            return;
-          }
-          this.player.setOwnerTint(style.tint);
-          this.refreshUi(false);
-          this.saveProgress();
-          this.shopOverlay?.destroy(true);
-          this.shopOverlay = undefined;
-          this.toast.show(result === "purchased" ? `${style.name} 털색 구매!` : `${style.name} 털색 장착!`, "success");
-        }, { width: 190, height: 23, primary: this.customization.getSelected().id === style.id, fontSize: 8 });
-      items.push(button);
+    const subtitle = this.add.text(240, 57, "구매한 코스튬은 바로 저장되고 게임에 적용돼요", {
+      fontFamily: UI_FONT, fontSize: "6px", color: "#9facc9",
+    }).setOrigin(0.5);
+    const previewGlow = this.add.circle(105, 131, 38, 0x45c6b8, 0.12).setStrokeStyle(1, 0x45c6b8, 0.45);
+    const preview = this.add.image(105, 126, "player-down-0").setScale(2.15);
+    const selectedStyle = this.customization.getSelected();
+    if (selectedStyle.tint !== 0xffffff) preview.setTint(selectedStyle.tint);
+    const look = this.customization.getAvatarLook();
+    const previewOutfit = createAvatarPreviewOverlay(this, 105, 126, look);
+    const previewLabels = this.add.text(
+      105,
+      179,
+      `${getAvatarPreviewName(look.hat)} · ${getAvatarPreviewName(look.apron)}\n${getAvatarPreviewName(look.accessory)}`,
+      { fontFamily: UI_FONT, fontSize: "6px", color: "#b8c6df", align: "center", lineSpacing: 2 },
+    ).setOrigin(0.5);
+    const items: Phaser.GameObjects.GameObject[] = [shade, panel, header, title, subtitle, previewGlow, preview, previewOutfit, previewLabels];
+    if (category === "fur") {
+      OWNER_STYLES.forEach((style, index) => {
+        const owned = this.customization.isOwned(style.id);
+        const selected = selectedStyle.id === style.id;
+        const swatch = this.add.circle(166, 86 + index * 29, 6, style.tint).setStrokeStyle(1, selected ? 0xffdf72 : 0x66718f);
+        const button = new PixelButton(this, 297, 86 + index * 29,
+          `${style.name} · ${selected ? "장착 중" : owned ? "장착" : `${formatCompactNumber(style.cost)}냥`}`,
+          () => {
+            const result = this.customization.purchaseOrEquip(style.id, this.economy);
+            if (result === "insufficient") return void this.toast.show("코스튬을 사기엔 돈이 부족해요", "warning");
+            this.player.setOwnerTint(style.tint);
+            this.refreshUi(false);
+            this.saveProgress();
+            this.refreshStyleShop(category);
+            this.toast.show(result === "purchased" ? `${style.name} 털색 구매!` : `${style.name} 장착!`, "success");
+          }, { width: 242, height: 23, primary: selected, fontSize: 7 });
+        items.push(swatch, button);
+      });
+    } else {
+      AVATAR_ITEMS.filter((item) => item.category === category).forEach((item, index) => {
+        const owned = this.customization.isAvatarOwned(item.id);
+        const selected = look[category] === item.id;
+        const icon = this.add.text(166, 86 + index * 29, item.icon, {
+          fontFamily: UI_FONT, fontSize: "10px", color: selected ? "#ffe17d" : "#79d9cf",
+        }).setOrigin(0.5);
+        const button = new PixelButton(this, 297, 86 + index * 29,
+          `${item.name} · ${selected ? "장착 중" : owned ? "장착" : `${formatCompactNumber(item.cost)}냥`}`,
+          () => {
+            const result = this.customization.purchaseOrEquipAvatarItem(item.id, this.economy);
+            if (result === "insufficient") return void this.toast.show("코스튬을 사기엔 돈이 부족해요", "warning");
+            this.player.setAvatarLook(this.customization.getAvatarLook());
+            this.refreshUi(false);
+            this.saveProgress();
+            this.refreshStyleShop(category);
+            this.toast.show(result === "purchased" ? `${item.name} 구매!` : `${item.name} 장착!`, "success");
+          }, { width: 242, height: 23, primary: selected, fontSize: 7 });
+        items.push(icon, button);
+      });
+    }
+    const categoryLabels: readonly [AvatarCategory, string][] = [
+      ["fur", "털색"], ["eyes", "눈"], ["hat", "모자"], ["apron", "앞치마"], ["accessory", "장식"],
+    ];
+    categoryLabels.forEach(([targetCategory, label], index) => {
+      items.push(new PixelButton(this, 81 + index * 64, 225, label, () => this.refreshStyleShop(targetCategory), {
+        width: 56, height: 20, primary: category === targetCategory, fontSize: 7,
+      }));
     });
-    const facilities = new PixelButton(this, 188, 224, "시설 상점", () => {
+    items.push(new PixelButton(this, 402, 225, "시설", () => {
       this.shopOverlay?.destroy(true);
       this.shopOverlay = undefined;
       this.openFacilityShop();
-    }, { width: 90, height: 22, primary: true, fontSize: 8 });
-    const close = new PixelButton(this, 292, 224, "닫기", () => {
+    }, { width: 52, height: 20, primary: false, fontSize: 7 }));
+    items.push(new PixelButton(this, 416, 43, "×", () => {
       this.shopOverlay?.destroy(true);
       this.shopOverlay = undefined;
-    }, { width: 80, height: 22, primary: false, fontSize: 8 });
-    items.push(facilities, close);
+    }, { width: 24, height: 20, primary: false, fontSize: 9 }));
     this.shopOverlay = this.add.container(0, 0, items).setDepth(3_200);
   }
 
-  private openFacilityShop(): void {
+  private refreshStyleShop(category: AvatarCategory): void {
+    this.shopOverlay?.destroy(true);
+    this.shopOverlay = undefined;
+    this.openStyleShop(category);
+  }
+
+  private openManagementInfo(): void {
     if (this.shopOverlay !== undefined) return;
-    const shade = this.add.rectangle(240, 135, 480, 270, 0x080b18, 0.9);
-    const panel = this.add.rectangle(240, 137, 350, 200, 0x171e37, 1).setStrokeStyle(2, 0xd49a55);
-    const title = this.add.text(240, 50, "가구·조리도구 상점", {
-      fontFamily: UI_FONT, fontStyle: "bold", fontSize: "14px", color: "#fff0bd",
+    const fame = this.getCurrentFameBenefits();
+    const fever = this.progression.getFeverBenefits();
+    const shade = this.add.rectangle(240, 135, 480, 270, 0x070a17, 0.93);
+    const panel = this.add.rectangle(240, 137, 370, 210, 0x171e35, 1).setStrokeStyle(2, 0x53d8c8);
+    const title = this.add.text(240, 48, "명성 & FEVER", {
+      fontFamily: UI_FONT, fontStyle: "bold", fontSize: "15px", color: "#fff0bd",
     }).setOrigin(0.5);
-    const effects = ["조리시간 -10%", "손님 인내심 +15%", "좌석 +1", "전체 결제 +10%"];
-    const items: Phaser.GameObjects.GameObject[] = [shade, panel, title];
-    FACILITY_UPGRADES.forEach((item, index) => {
+    const fameTitle = this.add.text(85, 76, `명성 Lv.${fame.level}`, {
+      fontFamily: UI_FONT, fontStyle: "bold", fontSize: "11px", color: "#75e1d4",
+    });
+    const fameBody = this.add.text(85, 98,
+      `결제 +${Math.round((fame.revenueMultiplier - 1) * 100)}%\nVIP ${Math.round(fame.vipChance * 100)}%\n팁 확률 +${Math.round(fame.tipChanceBonus * 100)}%\n특별 주문 ${Math.round(fame.specialOrderChance * 100)}%\n손님 ${fame.unlockedCustomerKinds.length}/4종`, {
+        fontFamily: UI_FONT, fontSize: "8px", color: "#c5cee5", lineSpacing: 5,
+      });
+    const feverTitle = this.add.text(254, 76, fever.level === 0 ? "FEVER 잠김" : `FEVER Lv.${fever.level}`, {
+      fontFamily: UI_FONT, fontStyle: "bold", fontSize: "11px", color: "#ffcb72",
+    });
+    const feverBody = this.add.text(254, 98, fever.level === 0
+      ? "9단계에서 해금돼요"
+      : `매출 ×${fever.revenueMultiplier}\n조리 ×${fever.cookingSpeedMultiplier}\n직원 ×${fever.workerSpeedMultiplier}\n팁 +${Math.round(fever.tipChanceBonus * 100)}%\n지속 ${Math.round(fever.durationMs / 1_000)}초`, {
+        fontFamily: UI_FONT, fontSize: "8px", color: "#c5cee5", lineSpacing: 5,
+      });
+    const flow = this.add.text(240, 194, "결제 → 피버 게이지 → 100% 자동 발동 · 종료 3초 전 경고", {
+      fontFamily: UI_FONT, fontSize: "7px", color: "#9facc9",
+    }).setOrigin(0.5);
+    const close = new PixelButton(this, 240, 224, "확인", () => {
+      this.shopOverlay?.destroy(true);
+      this.shopOverlay = undefined;
+    }, { width: 86, height: 22, primary: true, fontSize: 8 });
+    this.shopOverlay = this.add.container(0, 0, [shade, panel, title, fameTitle, fameBody, feverTitle, feverBody, flow, close]).setDepth(3_200);
+  }
+
+  private openFacilityShop(category: FacilityCategory = "kitchen"): void {
+    if (this.shopOverlay !== undefined) return;
+    const shade = this.add.rectangle(240, 135, 480, 270, 0x070a17, 0.93);
+    const panel = this.add.rectangle(240, 137, 410, 220, 0x171e35, 1).setStrokeStyle(2, 0xffb765);
+    const header = this.add.rectangle(240, 48, 406, 38, 0x2d263b, 1);
+    const title = this.add.text(265, 43, "MOONLIGHT SHOP", {
+      fontFamily: UI_FONT, fontStyle: "bold", fontSize: "13px", color: "#fff0bd",
+    }).setOrigin(0.5);
+    const categoryNames: Record<FacilityCategory, string> = {
+      kitchen: "주방", hall: "홀", exterior: "외관", management: "운영", staff: "직원",
+    };
+    const subtitle = this.add.text(265, 59, `${categoryNames[category]} 설비 · 구매 효과는 즉시 적용`, {
+      fontFamily: UI_FONT, fontSize: "6px", color: "#c1adc2",
+    }).setOrigin(0.5);
+    const items: Phaser.GameObjects.GameObject[] = [shade, panel, header, title, subtitle];
+    FACILITY_UPGRADES.filter((item) => item.category === category).forEach((item, index) => {
       const owned = this.customization.isFacilityOwned(item.id);
-      const button = new PixelButton(this, 240, 83 + index * 31,
-        `${item.name} · ${effects[index]} · ${owned ? "보유" : `${formatCompactNumber(item.cost)}냥`}`,
+      const fameLevel = this.getCurrentFameBenefits().level;
+      const requiredFame = getFacilityRequiredFame(item.id);
+      const locked = !owned && fameLevel < requiredFame;
+      const cardY = 82 + index * 36;
+      const iconPanel = this.add.rectangle(102, cardY, 36, 27, owned ? 0x365a4a : 0x252d49, 1)
+        .setStrokeStyle(1, owned ? 0x75d49c : 0x687494);
+      const icon = this.add.text(102, cardY, item.icon, {
+        fontFamily: UI_FONT, fontSize: "15px", color: owned ? "#8ee8ad" : "#ffd27a",
+      }).setOrigin(0.5);
+      const button = new PixelButton(this, 278, cardY,
+        `${item.name}  |  ${item.effect}\n${owned ? "✓ 설치 완료" : locked ? `명성 ${requiredFame} 필요` : `${formatCompactNumber(item.cost)}냥`}`,
         () => {
-          const result = this.customization.purchaseFacility(item.id, this.economy);
+          const result = this.customization.purchaseFacility(item.id, this.economy, fameLevel);
+          if (result === "locked") {
+            this.toast.show(`명성 ${requiredFame}에서 해금돼요`, "warning");
+            return;
+          }
           if (result === "insufficient") {
             this.toast.show("시설을 사기엔 돈이 부족해요", "warning");
             return;
           }
           if (result === "purchased") {
             const facilityEffects = this.customization.getFacilityEffects();
-            this.createTables(this.currentEffects.seatCount + facilityEffects.bonusSeats);
+            this.applyEffects(this.currentEffects, false);
             this.decor.setShopTier(facilityEffects.visualTier);
+            this.decor.setShopFacilities(this.customization.getOwnedFacilityIds());
             this.refreshUi(false);
             this.saveProgress();
             this.toast.show(`${item.name} 설치 완료!`, "success");
           }
           this.shopOverlay?.destroy(true);
           this.shopOverlay = undefined;
-          this.openFacilityShop();
-        }, { width: 280, height: 24, primary: !owned, fontSize: 7 });
-      items.push(button);
+          this.openFacilityShop(category);
+        }, { width: 300, height: 29, primary: !owned && !locked, fontSize: 7 });
+      items.push(iconPanel, icon, button);
     });
-    const styleShop = new PixelButton(this, 188, 225, "외형 상점", () => {
+    const styleShop = new PixelButton(this, 78, 43, "옷장", () => {
       this.shopOverlay?.destroy(true);
       this.shopOverlay = undefined;
       this.openStyleShop();
-    }, { width: 90, height: 22, primary: false, fontSize: 8 });
-    const close = new PixelButton(this, 292, 225, "닫기", () => {
+    }, { width: 50, height: 20, primary: false, fontSize: 7 });
+    const worktops = new PixelButton(this, 138, 43, "조리대", () => {
       this.shopOverlay?.destroy(true);
       this.shopOverlay = undefined;
-    }, { width: 80, height: 22, primary: false, fontSize: 8 });
-    items.push(styleShop, close);
+      this.openWorktopShop();
+    }, { width: 54, height: 20, primary: false, fontSize: 7 });
+    const close = new PixelButton(this, 416, 43, "×", () => {
+      this.shopOverlay?.destroy(true);
+      this.shopOverlay = undefined;
+    }, { width: 24, height: 20, primary: false, fontSize: 9 });
+    (["kitchen", "hall", "exterior", "management", "staff"] as const).forEach((targetCategory, index) => {
+      items.push(new PixelButton(this, 85 + index * 78, 225, categoryNames[targetCategory], () => {
+        this.shopOverlay?.destroy(true);
+        this.shopOverlay = undefined;
+        this.openFacilityShop(targetCategory);
+      }, { width: 68, height: 20, primary: category === targetCategory, fontSize: 7 }));
+    });
+    items.push(styleShop, worktops, close);
+    this.shopOverlay = this.add.container(0, 0, items).setDepth(3_200);
+  }
+
+  private openWorktopShop(page = 0): void {
+    if (this.shopOverlay !== undefined) return;
+    const unlockedMenus = this.currentEffects.unlockedMenuIds;
+    const pageCount = Math.max(1, Math.ceil(unlockedMenus.length / 4));
+    const safePage = Phaser.Math.Clamp(page, 0, pageCount - 1);
+    const visibleMenus = unlockedMenus.slice(safePage * 4, safePage * 4 + 4);
+    const shade = this.add.rectangle(240, 135, 480, 270, 0x080b18, 0.9);
+    const panel = this.add.rectangle(240, 137, 350, 200, 0x171e37, 1).setStrokeStyle(2, 0xffb765);
+    const title = this.add.text(240, 49, "메뉴별 조리대 확장", {
+      fontFamily: UI_FONT, fontStyle: "bold", fontSize: "14px", color: "#fff0bd",
+    }).setOrigin(0.5);
+    const hint = this.add.text(240, 67, "조리대 슬롯과 셰프가 모두 있어야 동시 조리돼요", {
+      fontFamily: UI_FONT, fontSize: "7px", color: "#9eabc8",
+    }).setOrigin(0.5);
+    const items: Phaser.GameObjects.GameObject[] = [shade, panel, title, hint];
+    visibleMenus.forEach((menuItemId, index) => {
+      const slots = this.customization.getWorktopSlotCount(menuItemId);
+      const price = this.progression.getMenuPrice(menuItemId);
+      const cost = getWorktopSlotUpgradeCost(price, slots);
+      const menuName = getMenuItem(menuItemId).name;
+      const button = new PixelButton(
+        this,
+        240,
+        94 + index * 31,
+        slots >= 3
+          ? `${menuName} · 조리대 ${slots}/3 · 최대`
+          : `${menuName} · ${slots}→${slots + 1}칸 · ${formatCompactNumber(cost)}냥`,
+        () => {
+          const result = this.customization.purchaseWorktopSlot(menuItemId, price, this.economy);
+          if (result === "insufficient") {
+            this.toast.show("조리대를 늘리기엔 돈이 부족해요", "warning");
+            return;
+          }
+          if (result === "purchased") {
+            this.applyEffects(this.currentEffects, false);
+            this.refreshUi(false);
+            this.saveProgress();
+            this.toast.show(`${menuName} 동시 조리 슬롯 확장!`, "success");
+          }
+          this.shopOverlay?.destroy(true);
+          this.shopOverlay = undefined;
+          this.openWorktopShop(safePage);
+        },
+        { width: 274, height: 24, primary: slots < 3, fontSize: 7 },
+      );
+      items.push(button);
+    });
+    if (pageCount > 1) {
+      const previous = new PixelButton(this, 175, 218, "◀", () => {
+        this.shopOverlay?.destroy(true);
+        this.shopOverlay = undefined;
+        this.openWorktopShop((safePage - 1 + pageCount) % pageCount);
+      }, { width: 36, height: 20, primary: false, fontSize: 8 });
+      const pageLabel = this.add.text(240, 218, `${safePage + 1}/${pageCount}`, {
+        fontFamily: UI_FONT, fontSize: "8px", color: "#d9dfef",
+      }).setOrigin(0.5);
+      const next = new PixelButton(this, 305, 218, "▶", () => {
+        this.shopOverlay?.destroy(true);
+        this.shopOverlay = undefined;
+        this.openWorktopShop((safePage + 1) % pageCount);
+      }, { width: 36, height: 20, primary: false, fontSize: 8 });
+      items.push(previous, pageLabel, next);
+    }
+    const back = new PixelButton(this, 392, 218, "시설", () => {
+      this.shopOverlay?.destroy(true);
+      this.shopOverlay = undefined;
+      this.openFacilityShop();
+    }, { width: 55, height: 20, primary: false, fontSize: 7 });
+    items.push(back);
     this.shopOverlay = this.add.container(0, 0, items).setDepth(3_200);
   }
 
   private toggleMute(): void {
     const muted = this.sfx.toggleMute();
     this.toast.show(muted ? "소리를 껐어요" : "소리를 켰어요");
+    this.saveProgress();
+  }
+
+  private openSoundSettings(): void {
+    if (this.shopOverlay !== undefined) return;
+    const shade = this.add.rectangle(240, 135, 480, 270, 0x070a17, 0.94);
+    const panel = this.add.rectangle(240, 137, 340, 218, 0x161d35, 1).setStrokeStyle(2, 0x53d8c8);
+    const title = this.add.text(240, 43, "SOUND MIXER", {
+      fontFamily: UI_FONT, fontStyle: "bold", fontSize: "13px", color: "#fff0bd",
+    }).setOrigin(0.5);
+    const subtitle = this.add.text(240, 60, "배경음과 효과음을 따로 조절할 수 있어요", {
+      fontFamily: UI_FONT, fontSize: "7px", color: "#9faccc",
+    }).setOrigin(0.5);
+    const items: Phaser.GameObjects.GameObject[] = [shade, panel, title, subtitle];
+
+    const createVolumeRow = (
+      label: string,
+      y: number,
+      getVolume: () => number,
+      setVolume: (volume: number) => void,
+      toggleMuted: () => boolean,
+      isMuted: () => boolean,
+    ): void => {
+      const labelText = this.add.text(112, y, label, {
+        fontFamily: UI_FONT, fontStyle: "bold", fontSize: "8px", color: "#d9dfef",
+      }).setOrigin(0, 0.5);
+      const valueText = this.add.text(252, y, `${Math.round(getVolume() * 100)}%`, {
+        fontFamily: UI_FONT, fontStyle: "bold", fontSize: "8px", color: "#79e3d7",
+      }).setOrigin(0.5);
+      const muteButton = new PixelButton(this, 358, y, isMuted() ? "켜기" : "끄기", () => {
+        const muted = toggleMuted();
+        muteButton.setText(muted ? "켜기" : "끄기");
+        this.saveProgress();
+      }, { width: 45, height: 21, primary: false, fontSize: 7 });
+      const updateVolume = (step: number): void => {
+        setVolume(getVolume() + step);
+        valueText.setText(`${Math.round(getVolume() * 100)}%`);
+        this.sfx.click();
+        this.saveProgress();
+      };
+      const down = new PixelButton(this, 205, y, "−", () => updateVolume(-0.1), {
+        width: 30, height: 21, primary: false, fontSize: 10,
+      });
+      const up = new PixelButton(this, 299, y, "+", () => updateVolume(0.1), {
+        width: 30, height: 21, primary: false, fontSize: 10,
+      });
+      items.push(labelText, valueText, down, up, muteButton);
+    };
+
+    createVolumeRow(
+      "전체",
+      94,
+      () => this.sfx.settings.masterVolume,
+      (volume) => this.sfx.setMasterVolume(volume),
+      () => this.sfx.toggleMute(),
+      () => this.sfx.isMuted,
+    );
+    createVolumeRow(
+      "배경음",
+      137,
+      () => this.sfx.settings.musicVolume,
+      (volume) => this.sfx.setMusicVolume(volume),
+      () => this.sfx.toggleMusicMute(),
+      () => this.sfx.settings.musicMuted,
+    );
+    createVolumeRow(
+      "효과음",
+      180,
+      () => this.sfx.settings.sfxVolume,
+      (volume) => this.sfx.setSfxVolume(volume),
+      () => this.sfx.toggleSfxMute(),
+      () => this.sfx.settings.sfxMuted,
+    );
+    const close = new PixelButton(this, 240, 224, "설정 완료", () => {
+      this.saveProgress();
+      this.shopOverlay?.destroy(true);
+      this.shopOverlay = undefined;
+      setStatus("사운드 설정을 저장했습니다.");
+    }, { width: 100, height: 23, primary: true, fontSize: 8 });
+    items.push(close);
+    this.shopOverlay = this.add.container(0, 0, items).setDepth(3_300);
+  }
+
+  private openPerformanceSettings(): void {
+    if (this.shopOverlay !== undefined) return;
+    const shade = this.add.rectangle(240, 135, 480, 270, 0x070a17, 0.94);
+    const panel = this.add.rectangle(240, 137, 368, 220, 0x161d35, 1).setStrokeStyle(2, 0x53d8c8);
+    const title = this.add.text(240, 40, "PERFORMANCE", {
+      fontFamily: UI_FONT, fontStyle: "bold", fontSize: "13px", color: "#fff0bd",
+    }).setOrigin(0.5);
+    const subtitle = this.add.text(240, 57, "화질과 배터리 사용량을 선택하세요", {
+      fontFamily: UI_FONT, fontSize: "7px", color: "#9faccc",
+    }).setOrigin(0.5);
+    const diagnostics = this.add.text(240, 158, "", {
+      fontFamily: UI_FONT, fontSize: "7px", color: "#9faccc", align: "center", lineSpacing: 2,
+    }).setOrigin(0.5);
+    const items: Phaser.GameObjects.GameObject[] = [shade, panel, title, subtitle, diagnostics];
+    const buttons: Partial<Record<PerformanceMode, PixelButton>> = {};
+    const descriptions: Record<PerformanceMode, string> = {
+      quality: "60FPS · 네온/비/반사 최대",
+      balanced: `${this.mobilePowerProfile ? 30 : 60}FPS · 연출 수 절감`,
+      battery: "24FPS · 최소 파티클 · 반사 끔",
+    };
+    const refresh = (): void => {
+      for (const mode of ["quality", "balanced", "battery"] as const) {
+        buttons[mode]?.setEnabled(mode !== this.performanceMode);
+      }
+      const atmosphere = this.atmosphere.getDiagnostics();
+      diagnostics.setText(
+        `현재 ${getPerformanceModeLabel(this.performanceMode)} · 목표 ${this.performanceProfile.targetFps}FPS\n`
+        + `조명 ${atmosphere.activeLights}/${this.performanceProfile.lightLimit} · 파티클 ${atmosphere.visibleParticles} · 반사 ${atmosphere.reflectionsEnabled ? "켜짐" : "꺼짐"}`,
+      );
+    };
+    (["quality", "balanced", "battery"] as const).forEach((mode, index) => {
+      const x = 130 + index * 110;
+      const button = new PixelButton(this, x, 91, getPerformanceModeLabel(mode), () => {
+        this.setPerformanceMode(mode);
+        refresh();
+      }, { width: 92, height: 28, primary: mode === "balanced", fontSize: 9 });
+      buttons[mode] = button;
+      const description = this.add.text(x, 119, descriptions[mode], {
+        fontFamily: UI_FONT, fontSize: "6px", color: "#aeb8d2", align: "center", wordWrap: { width: 96 },
+      }).setOrigin(0.5);
+      items.push(button, description);
+    });
+    const motion = new PixelButton(
+      this,
+      240,
+      190,
+      this.reducedMotion ? "모션 최소화: 켜짐" : "모션 최소화: 꺼짐",
+      () => {
+        this.setReducedMotion(!this.reducedMotion);
+        motion.setText(this.reducedMotion ? "모션 최소화: 켜짐" : "모션 최소화: 꺼짐");
+        refresh();
+      },
+      { width: 150, height: 23, primary: false, fontSize: 7 },
+    );
+    const close = new PixelButton(this, 240, 225, "설정 완료", () => {
+      this.saveProgress();
+      this.shopOverlay?.destroy(true);
+      this.shopOverlay = undefined;
+      setStatus(`성능 모드를 ${getPerformanceModeLabel(this.performanceMode)}로 저장했습니다.`);
+    }, { width: 100, height: 23, primary: true, fontSize: 8 });
+    items.push(motion, close);
+    this.shopOverlay = this.add.container(0, 0, items).setDepth(3_300);
+    refresh();
+  }
+
+  private setPerformanceMode(mode: PerformanceMode): void {
+    this.performanceMode = mode;
+    this.performanceProfile = getPerformanceProfile(mode, this.mobilePowerProfile);
+    applyGameLoopFpsLimit(this.game.loop, this.performanceProfile.targetFps);
+    this.atmosphere.setPerformanceMode(mode);
+    this.toast.show(
+      mode === "battery" ? "절전 모드 · 배터리 사용을 줄여요" : `${getPerformanceModeLabel(mode)} 모드 적용`,
+      "success",
+    );
     this.saveProgress();
   }
 
@@ -1810,7 +2428,8 @@ export class GameScene extends Phaser.Scene {
       rating: state.rating,
       settings: {
         ...this.currentSave.settings,
-        muted: this.sfx.isMuted,
+        ...this.sfx.settings,
+        performanceMode: this.performanceMode,
         reducedMotion: this.reducedMotion,
       },
       muted: this.sfx.isMuted,
@@ -1831,18 +2450,51 @@ export class GameScene extends Phaser.Scene {
     if (effects.chefCount === 0 || effects.serverCount === 0) return;
     const weights = this.progression.getMenuOrderWeights();
     const facilityEffects = this.customization.getFacilityEffects();
-    let revenuePerSecond = 0;
+    const totalWeight = [...weights.values()].reduce((sum, weight) => sum + weight, 0);
+    const averageQuantity = getAverageOrderQuantity(this.progression.getCurrentStage());
+    const quantityProbabilities = getOrderQuantityProbabilities(this.progression.getCurrentStage());
+    let averageOrderValue = 0;
+    let averageCookingTimeMs = 0;
     for (const [menuItemId, weight] of weights) {
-      revenuePerSecond += weight
+      const normalizedWeight = weight / Math.max(0.001, totalWeight);
+      averageOrderValue += normalizedWeight
         * this.progression.getMenuPrice(menuItemId)
+        * averageQuantity
         * facilityEffects.revenueMultiplier
-        * effects.fameRevenueMultiplier
-        / Math.max(1, this.progression.getMenuCookingTimeMs(menuItemId) * facilityEffects.cookingTimeMultiplier / 1_000);
+        * getEffectiveFameRevenueMultiplier(effects, facilityEffects.fameBonus);
+      averageCookingTimeMs += normalizedWeight
+        * quantityProbabilities.reduce(
+          (sum, probability, index) => sum
+            + probability * this.progression.getMenuCookingTimeMs(menuItemId, index + 1),
+          0,
+        )
+        * facilityEffects.cookingTimeMultiplier;
     }
-    const automation = Math.min(1, effects.chefCount / Math.max(1, effects.unlockedMenuIds.length))
-      * Math.min(1, effects.serverCount / 2);
-    const nextCost = this.progression.getNextPurchase()?.purchase.cost;
-    const reward = calculateOfflineReward({ elapsedMs, revenuePerSecond, automation, nextPurchaseCost: nextCost });
+    const averageChefActionTimeMs = averageWorkerActionTimeMs("chef", effects.chefCount);
+    const averageServerActionTimeMs = averageWorkerActionTimeMs("server", effects.serverCount);
+    const customerWeight = CUSTOMER_DATA.reduce((sum, customer) => sum + customer.spawnWeight, 0);
+    const averageDiningTimeMs = CUSTOMER_DATA.reduce(
+      (sum, customer) => sum + customer.eatingTimeMs * customer.spawnWeight / customerWeight,
+      0,
+    );
+    const stageConfig = getStageConfig(this.progression.getCurrentStage());
+    const reward = calculateOfflineReward({
+      elapsedMs,
+      averageOrderValue,
+      averageCookingTimeMs,
+      averageChefActionTimeMs,
+      averageServerActionTimeMs,
+      averageDiningTimeMs,
+      averageCustomerIntervalMs: stageConfig.baseSpawnIntervalMs
+        * CUSTOMER_ARRIVAL_INTERVAL_MULTIPLIER,
+      seatCount: effects.seatCount + facilityEffects.bonusSeats,
+      chefCount: effects.chefCount,
+      serverCount: effects.serverCount,
+      efficiency: calculateOfflineEfficiency(
+        effects.fameLevel + facilityEffects.fameBonus,
+        facilityEffects.offlineEfficiencyBonus,
+      ),
+    });
     if (reward.amount <= 0) return;
     this.economy.addMoney(reward.amount);
     this.offlineReward = reward;
@@ -1856,12 +2508,10 @@ export class GameScene extends Phaser.Scene {
   }
 
   private releaseChefIfCookingComplete(workerId: string): void {
-    const hasPendingCooking = [...this.stations.values()].some(
-      (station) => station.hasPendingCookingForChef(workerId),
-    );
-    if (!hasPendingCooking) {
-      this.releaseChef(workerId);
+    for (const station of this.stations.values()) {
+      if (station.hasPendingCookingForChef(workerId)) return;
     }
+    this.releaseChef(workerId);
   }
 
   private releaseChef(workerId: string): void {
@@ -1933,6 +2583,8 @@ export class GameScene extends Phaser.Scene {
           rushRemainingMs: Math.round(this.rushRemainingMs),
           fever: this.progression.getFeverState(),
           feverMultiplier: this.progression.getFeverRevenueMultiplier(),
+          musicPlaybackRate: this.sfx.getMusicPlaybackRate(),
+          audio: this.sfx.diagnostics,
           promotionMenuId: this.promotionMenuId,
           promotionRemainingMs: Math.round(this.promotionRemainingMs),
           tickets: { ...this.ticketStats },
@@ -1957,15 +2609,19 @@ export class GameScene extends Phaser.Scene {
           menuItemId: station.menuItemId,
           queued: station.getQueueCount(),
           ready: station.getReadyCount(),
-          active: station.getActiveTicket() !== undefined,
-          activeCount: station.getActiveCount(),
+            active: station.getActiveTicket() !== undefined,
+            activeCount: station.getActiveCount(),
+            worktopSlots: this.customization.getWorktopSlotCount(station.menuItemId),
         })),
         atmosphere: this.atmosphere.getDiagnostics(),
         performance: {
-          averageFps: this.frameSamples.length === 0
+          averageFps: this.smoothedGameplayDeltaMs <= 0
             ? 0
-            : Math.round(1_000 / (this.frameSamples.reduce((sum, sample) => sum + sample, 0) / this.frameSamples.length)),
-          sampleCount: this.frameSamples.length,
+            : Math.round(1_000 / this.smoothedGameplayDeltaMs),
+          sampleCount: this.gameplayFrameCount,
+          targetFps: this.performanceProfile.targetFps,
+          mode: this.performanceMode,
+          mobileProfile: this.mobilePowerProfile,
         },
         offlineReward: this.offlineReward,
         player: {
@@ -1983,7 +2639,9 @@ export class GameScene extends Phaser.Scene {
           quantity: customer.orderQuantity,
           remainingQuantity: customer.remainingQuantity,
           patienceMs: Math.round(customer.patienceMs),
+          maxPatienceMs: Math.round(customer.maxPatienceMs),
           vip: customer.isVip,
+          specialOrder: customer.isSpecialOrder,
         })),
       }),
       grantMoney: (amount = 10_000) => this.economy.addMoney(Math.max(0, Math.round(amount))),
@@ -2015,6 +2673,7 @@ export class GameScene extends Phaser.Scene {
         this.saveProgress();
       },
       spawnVip: () => this.spawnCustomer(true),
+      spawnSpecial: () => this.spawnCustomer(false, true),
       triggerRush: () => {
         const config = getRushConfig(this.progression.getCurrentStage());
         if (config === undefined) {
@@ -2034,6 +2693,16 @@ export class GameScene extends Phaser.Scene {
       },
       triggerPromotion: (menuItemId) => this.startMenuPromotion(menuItemId),
       setReducedMotion: (reducedMotion) => this.setReducedMotion(reducedMotion),
+      setPerformanceMode: (mode) => this.setPerformanceMode(mode),
+      setAppHidden: (hidden) => {
+        if (hidden) {
+          this.handleAppVisibilityChange(true);
+          this.game.loop.sleep();
+        } else {
+          this.game.loop.wake();
+          this.handleAppVisibilityChange(false);
+        }
+      },
       skipTutorial: () => {
         while (this.tutorialOverlay !== undefined) {
           this.advanceTutorial();
@@ -2058,6 +2727,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private handleAppVisibilityChange(hidden: boolean): void {
+    this.appHidden = hidden;
     this.sfx.setMusicPaused(
       hidden || this.isPaused || this.tutorialOverlay !== undefined || this.clearing,
     );
@@ -2095,23 +2765,31 @@ export class GameScene extends Phaser.Scene {
   }
 }
 
-function getRushConfig(stage: GrowthStage): {
-  readonly periodMs: number;
-  readonly durationMs: number;
-  readonly spawnMultiplier: number;
-} | undefined {
-  const configs = {
-    25: [90_000, 25_000, 0.65],
-    26: [85_000, 25_000, 0.65],
-    27: [80_000, 27_000, 0.62],
-    28: [75_000, 27_000, 0.6],
-    29: [70_000, 30_000, 0.58],
-    30: [60_000, 30_000, 0.55],
-  } as const;
-  const config = configs[stage as keyof typeof configs];
-  return config === undefined
-    ? undefined
-    : { periodMs: config[0], durationMs: config[1], spawnMultiplier: config[2] };
+type MutableTimeStep = Phaser.Core.TimeStep & {
+  _limitRate: number;
+  _target: number;
+};
+
+function updateCharacterDepth(
+  character: Phaser.GameObjects.Image,
+  baseDepth: number,
+): void {
+  const targetDepth = baseDepth + Math.round(character.y / 4) * 4;
+  if (character.depth !== targetDepth) character.setDepth(targetDepth);
+}
+
+function applyGameLoopFpsLimit(loop: Phaser.Core.TimeStep, fps: number): void {
+  const normalizedFps = Math.max(20, Math.min(60, Math.round(fps)));
+  const mutable = loop as MutableTimeStep;
+  loop.targetFps = normalizedFps;
+  loop.fpsLimit = normalizedFps;
+  loop.hasFpsLimit = true;
+  mutable._target = 1_000 / normalizedFps;
+  mutable._limitRate = 1_000 / normalizedFps;
+}
+
+function getRushConfig(stage: GrowthStage): RushConfig | undefined {
+  return RUSH_CONFIGS[stage];
 }
 
 function readDebugStage(search: string): GrowthStage | undefined {
@@ -2126,6 +2804,108 @@ function getWorkerActionTimeMs(role: WorkerRole, ordinal: number): number {
   return WORKER_HIRE_CONFIGS.find(
     (config) => config.role === role && config.ordinal === ordinal,
   )?.actionTimeMs ?? (role === "chef" ? 1_100 : 4_800);
+}
+
+function averageWorkerActionTimeMs(role: WorkerRole, count: number): number {
+  if (count <= 0) return 0;
+  let total = 0;
+  for (let ordinal = 1; ordinal <= count; ordinal += 1) {
+    total += getWorkerActionTimeMs(role, ordinal);
+  }
+  return total / count;
+}
+
+function getAverageOrderQuantity(stage: GrowthStage): number {
+  return getOrderQuantityProbabilities(stage).reduce(
+    (sum, probability, index) => sum + probability * (index + 1),
+    0,
+  );
+}
+
+function getOrderQuantityProbabilities(stage: GrowthStage): readonly number[] {
+  const probabilities = [
+    [1, 0, 0],
+    [0.95, 0.05, 0],
+    [0.88, 0.12, 0],
+    [0.78, 0.2, 0.02],
+    [0.68, 0.26, 0.06],
+    [0.55, 0.35, 0.1],
+  ] as const;
+  return probabilities[Math.min(5, Math.floor((stage - 1) / 5))] ?? probabilities[0];
+}
+
+function getEffectiveFameRevenueMultiplier(
+  effects: ProgressionEffects,
+  facilityFameBonus: number,
+): number {
+  return getFameBenefits(effects.fameLevel, facilityFameBonus).revenueMultiplier;
+}
+
+function getAvatarPreviewName(id: string): string {
+  return AVATAR_ITEMS.find((item) => item.id === id)?.name ?? "기본";
+}
+
+function createAvatarPreviewOverlay(
+  scene: Phaser.Scene,
+  x: number,
+  y: number,
+  look: AvatarLook,
+): Phaser.GameObjects.Graphics {
+  const previewScale = 2.15;
+  const graphics = scene.add.graphics()
+    .setPosition(x - 16 * previewScale, y - 16 * previewScale)
+    .setScale(previewScale);
+  if (look.apron !== "apron-none") {
+    const color = look.apron === "apron-red" ? 0xc94843 : look.apron === "apron-mint" ? 0x5bc7ae : 0x263b76;
+    graphics.fillStyle(0x38283a, 1).fillRect(10, 18, 12, 8);
+    graphics.fillStyle(color, 1).fillRect(11, 18, 10, 7);
+    if (look.apron === "apron-night") graphics.fillStyle(0xffd45c, 1).fillRect(15, 20, 2, 2);
+  }
+  if (look.eyes !== "eyes-round") {
+    graphics.fillStyle(0xffe6b7, 1).fillRect(10, 10, 12, 4);
+    graphics.fillStyle(look.eyes === "eyes-sparkle" ? 0x67e8e0 : 0x38283a, 1);
+    if (look.eyes === "eyes-sleepy") {
+      graphics.fillRect(11, 12, 3, 1).fillRect(18, 12, 3, 1);
+    } else {
+      graphics.fillRect(11, 10, 2, 2).fillRect(19, 10, 2, 2);
+      graphics.fillStyle(0xffffff, 1).fillRect(11, 10, 1, 1).fillRect(19, 10, 1, 1);
+    }
+  }
+  if (look.hat === "hat-band") {
+    graphics.fillStyle(0x38283a, 1).fillRect(7, 7, 18, 3);
+    graphics.fillStyle(0xd24b46, 1).fillRect(8, 7, 16, 2).fillRect(5, 8, 4, 4);
+  } else if (look.hat === "hat-chef") {
+    graphics.fillStyle(0x38283a, 1).fillRect(9, 2, 14, 7);
+    graphics.fillStyle(0xfff4d6, 1).fillRect(10, 3, 12, 6).fillRect(7, 4, 5, 4).fillRect(20, 4, 5, 4);
+  } else if (look.hat === "hat-moon") {
+    graphics.fillStyle(0x38283a, 1).fillRect(7, 4, 18, 5);
+    graphics.fillStyle(0x344f9b, 1).fillRect(8, 4, 16, 4);
+    graphics.fillStyle(0xffdf71, 1).fillRect(18, 5, 3, 2);
+  }
+  if (look.accessory !== "acc-none") {
+    const color = look.accessory === "acc-bell" ? 0xffd45c : look.accessory === "acc-fish" ? 0xf28c72 : 0x8de6db;
+    graphics.fillStyle(0x38283a, 1).fillRect(15, 17, 4, 4);
+    graphics.fillStyle(color, 1).fillRect(16, 18, 2, 2);
+  }
+  return graphics;
+}
+
+function formatClockTime(timestamp: number): string {
+  return new Intl.DateTimeFormat("ko-KR", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).format(new Date(timestamp));
+}
+
+function formatOfflineDuration(elapsedMs: number): string {
+  const totalMinutes = Math.max(1, Math.floor(elapsedMs / 60_000));
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours === 0) return `${minutes}분`;
+  if (minutes === 0) return `${hours}시간`;
+  return `${hours}시간 ${minutes}분`;
 }
 
 function setStatus(message: string): void {

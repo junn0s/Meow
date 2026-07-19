@@ -25,7 +25,7 @@ export class ResultScene extends Phaser.Scene {
       || window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
     createMenuBackdrop(this, reducedMotion);
     this.add.rectangle(240, 135, 480, 270, 0x0a0d1d, 0.66).setDepth(15);
-    const sound = new SoundManager(save?.muted ?? false);
+    const sound = new SoundManager(save?.settings ?? false);
     void sound.unlock();
     sound.clear();
 

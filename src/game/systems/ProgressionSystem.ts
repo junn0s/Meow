@@ -29,6 +29,10 @@ export const PROGRESSION_CLEAR_RATING = 4.5;
 const FEVER_DURATIONS_MS = [0, 15_000, 18_000, 20_000] as const;
 const FEVER_COOLDOWNS_MS = [0, 18_000, 16_000, 14_000] as const;
 const FEVER_REVENUE_MULTIPLIERS = [1, 1.5, 1.65, 1.8] as const;
+const FEVER_COOKING_SPEED_MULTIPLIERS = [1, 1.15, 1.25, 1.35] as const;
+const FEVER_WORKER_SPEED_MULTIPLIERS = [1, 1.12, 1.2, 1.3] as const;
+const FEVER_TIP_CHANCE_BONUSES = [0, 0.08, 0.12, 0.18] as const;
+const NO_FEVER_TRANSITION = Object.freeze({ activated: false, ended: false });
 
 const GENERIC_EFFECTS = [
   { effect: "menu_price", name: "주력 메뉴 가격 I", description: "표시 단가를 올려 주문 한 건의 가치를 키웁니다." },
@@ -130,6 +134,7 @@ export class ProgressionSystem {
     const unlockedMenuIds = this.state.menuProgress
       .filter((menu) => menu.unlocked)
       .map((menu) => menu.menuItemId);
+    const fameLevel = stageToVisualTier(this.state.currentStage);
     return {
       unlockedMenuIds,
       seatCount: completedConfig?.seatCount ?? 2,
@@ -141,9 +146,9 @@ export class ProgressionSystem {
       chefHired: this.state.workerProgress.chefCount > 0,
       serverHired: this.state.workerProgress.serverCount > 0,
       feverLevel: this.state.feverState.level,
-      fameLevel: stageToVisualTier(this.state.currentStage),
-      fameRevenueMultiplier: 1 + (stageToVisualTier(this.state.currentStage) - 1) * 0.02,
-      vipUnlocked: completedStage >= 23,
+      fameLevel,
+      fameRevenueMultiplier: 1 + (fameLevel - 1) * 0.02,
+      vipUnlocked: fameLevel >= 4,
       rushUnlocked: completedStage >= 25,
       finalFacilityPurchased: this.isFinalFacilityPurchased(),
     };
@@ -223,10 +228,48 @@ export class ProgressionSystem {
       : 1;
   }
 
+  public getFeverCookingSpeedMultiplier(): number {
+    const fever = this.state.feverState;
+    return fever.activeRemainingMs > 0 ? FEVER_COOKING_SPEED_MULTIPLIERS[fever.level] : 1;
+  }
+
+  public getFeverWorkerSpeedMultiplier(): number {
+    const fever = this.state.feverState;
+    return fever.activeRemainingMs > 0 ? FEVER_WORKER_SPEED_MULTIPLIERS[fever.level] : 1;
+  }
+
+  public getFeverTipChanceBonus(): number {
+    const fever = this.state.feverState;
+    return fever.activeRemainingMs > 0 ? FEVER_TIP_CHANCE_BONUSES[fever.level] : 0;
+  }
+
+  public getFeverBenefits(): {
+    readonly level: 0 | 1 | 2 | 3;
+    readonly revenueMultiplier: number;
+    readonly cookingSpeedMultiplier: number;
+    readonly workerSpeedMultiplier: number;
+    readonly tipChanceBonus: number;
+    readonly durationMs: number;
+  } {
+    const level = this.state.feverState.level;
+    return {
+      level,
+      revenueMultiplier: FEVER_REVENUE_MULTIPLIERS[level],
+      cookingSpeedMultiplier: FEVER_COOKING_SPEED_MULTIPLIERS[level],
+      workerSpeedMultiplier: FEVER_WORKER_SPEED_MULTIPLIERS[level],
+      tipChanceBonus: FEVER_TIP_CHANCE_BONUSES[level],
+      durationMs: FEVER_DURATIONS_MS[level],
+    };
+  }
+
   /** Advances only active-play fever timers; menus, pauses and offline time do not count. */
   public updateFever(deltaMs: number): { activated: boolean; ended: boolean } {
     const elapsed = Math.max(0, deltaMs);
     const previous = this.state.feverState;
+    if (
+      elapsed === 0
+      || (previous.activeRemainingMs === 0 && previous.cooldownRemainingMs === 0)
+    ) return NO_FEVER_TRANSITION;
     let activeRemainingMs = Math.max(0, previous.activeRemainingMs - elapsed);
     let cooldownRemainingMs = previous.cooldownRemainingMs;
     const ended = previous.activeRemainingMs > 0 && activeRemainingMs === 0;

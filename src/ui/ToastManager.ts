@@ -24,7 +24,7 @@ export class ToastManager {
     const background = this.scene.add
       .rectangle(175, 0, width, 22, color, 0.96)
       .setStrokeStyle(1, tone === "success" ? 0x72bd84 : tone === "warning" ? 0xd77764 : 0x7885ac);
-    const container = this.scene.add.container(0, 45, [background, text]).setDepth(1000).setAlpha(0);
+    const container = this.scene.add.container(0, 45, [background, text]).setDepth(4000).setAlpha(0);
     this.activeToast = container;
     this.scene.tweens.add({
       targets: container,

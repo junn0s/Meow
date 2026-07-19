@@ -9,6 +9,7 @@ export class HUD {
   private readonly moneyText: Phaser.GameObjects.Text;
   private readonly ratingText: Phaser.GameObjects.Text;
   private readonly customerText: Phaser.GameObjects.Text;
+  private readonly fameText: Phaser.GameObjects.Text;
   private readonly heldText: Phaser.GameObjects.Text;
   private readonly clockText: Phaser.GameObjects.Text;
   private readonly phaseText: Phaser.GameObjects.Text;
@@ -19,6 +20,15 @@ export class HUD {
   private readonly promotionText: Phaser.GameObjects.Text;
   private displayedMoney = 0;
   private targetMoney = 0;
+  private displayedElapsedSecond = -1;
+  private displayedPhase?: WorldVisualState["phase"];
+  private displayedPhaseBarWidth = -1;
+  private displayedServiceEventKey = "";
+  private displayedFeverText = "";
+  private displayedFeverColor = "";
+  private displayedFeverFillColor = -1;
+  private displayedFeverFillWidth = -1;
+  private displayedPromotionText = "";
 
   public constructor(scene: Phaser.Scene) {
     this.scene = scene;
@@ -61,6 +71,13 @@ export class HUD {
         color: "#c9d4ff",
       })
       .setDepth(902);
+    this.fameText = scene.add
+      .text(82, 22, "명성 1", {
+        fontFamily: '"Gowun Dodum", sans-serif',
+        fontSize: "6px",
+        color: "#75e1d4",
+      })
+      .setDepth(903);
     this.heldText = scene.add
       .text(203, 21, "손이 비었어요", {
         fontFamily: '"Gowun Dodum", sans-serif',
@@ -145,6 +162,10 @@ export class HUD {
     this.customerText.setText(`손님 ${count}`);
   }
 
+  public setFame(level: number): void {
+    this.fameText.setText(`명성 ${Math.max(1, Math.min(6, Math.floor(level)))}`);
+  }
+
   public setHeldFood(menuItemId?: MenuItemId): void {
     if (menuItemId === undefined) {
       this.heldText.setText("손이 비었어요").setColor("#9ea9ca");
@@ -155,6 +176,8 @@ export class HUD {
 
   public setElapsedTime(elapsedMs: number): void {
     const totalSeconds = Math.max(0, Math.floor(elapsedMs / 1000));
+    if (totalSeconds === this.displayedElapsedSecond) return;
+    this.displayedElapsedSecond = totalSeconds;
     const minutes = Math.floor(totalSeconds / 60);
     const seconds = totalSeconds % 60;
     this.clockText.setText(`${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`);
@@ -168,13 +191,22 @@ export class HUD {
       dawn: { icon: "◐", label: "새벽", color: "#e6c6de", bar: 0x9b70c8 },
     } as const;
     const phase = presentation[state.phase];
-    this.phaseText.setText(`${phase.icon} ${phase.label}`).setColor(phase.color);
-    this.phaseBar
-      .setFillStyle(phase.bar, 1)
-      .setDisplaySize(48 * Math.min(1, Math.max(0, state.phaseProgress)), 3);
+    if (this.displayedPhase !== state.phase) {
+      this.displayedPhase = state.phase;
+      this.phaseText.setText(`${phase.icon} ${phase.label}`).setColor(phase.color);
+      this.phaseBar.setFillStyle(phase.bar, 1);
+    }
+    const barWidth = Math.round(480 * Math.min(1, Math.max(0, state.phaseProgress))) / 10;
+    if (barWidth !== this.displayedPhaseBarWidth) {
+      this.displayedPhaseBarWidth = barWidth;
+      this.phaseBar.setDisplaySize(barWidth, 3);
+    }
   }
 
   public setServiceEvent(label?: string, warning = false): void {
+    const eventKey = label === undefined || label.length === 0 ? "none" : `${warning ? "warning" : "normal"}:${label}`;
+    if (eventKey === this.displayedServiceEventKey) return;
+    this.displayedServiceEventKey = eventKey;
     if (label === undefined || label.length === 0) {
       this.eventText.setVisible(false);
       return;
@@ -186,25 +218,47 @@ export class HUD {
   }
 
   public setFever(level: number, gauge: number, activeRemainingMs: number): void {
+    let label: string;
+    let textColor: string;
+    let fillColor: number;
+    let fillWidth: number;
     if (level <= 0) {
-      this.feverText.setText("FEVER 잠김").setColor("#8090af");
-      this.feverFill.setDisplaySize(0, 3);
-      return;
-    }
-    const active = activeRemainingMs > 0;
-    const multiplier = [1, 1.5, 1.65, 1.8][level] ?? 1;
-    this.feverText
-      .setText(active
+      label = "FEVER 잠김";
+      textColor = "#8090af";
+      fillColor = 0x39bfa8;
+      fillWidth = 0;
+    } else {
+      const active = activeRemainingMs > 0;
+      const multiplier = [1, 1.5, 1.65, 1.8][level] ?? 1;
+      label = active
         ? `FEVER ×${multiplier} · ${Math.ceil(activeRemainingMs / 1_000)}s`
-        : `FEVER ×${multiplier} · ${Math.round(gauge)}%`)
-      .setColor(active ? "#9ffff0" : "#b5c7d8");
-    this.feverFill
-      .setFillStyle(active ? 0x45ffd2 : 0x39bfa8, 1)
-      .setDisplaySize(50 * (active ? 1 : Math.min(1, Math.max(0, gauge / 100))), 3);
+        : `FEVER ×${multiplier} · ${Math.round(gauge)}%`;
+      textColor = activeRemainingMs > 0 && activeRemainingMs <= 3_000
+        ? "#ff8f9c"
+        : active ? "#9ffff0" : "#b5c7d8";
+      fillColor = active ? 0x45ffd2 : 0x39bfa8;
+      fillWidth = Math.round(500 * (active ? 1 : Math.min(1, Math.max(0, gauge / 100)))) / 10;
+    }
+    if (label !== this.displayedFeverText || textColor !== this.displayedFeverColor) {
+      this.displayedFeverText = label;
+      this.displayedFeverColor = textColor;
+      this.feverText.setText(label).setColor(textColor);
+    }
+    if (fillColor !== this.displayedFeverFillColor) {
+      this.displayedFeverFillColor = fillColor;
+      this.feverFill.setFillStyle(fillColor, 1);
+    }
+    if (fillWidth !== this.displayedFeverFillWidth) {
+      this.displayedFeverFillWidth = fillWidth;
+      this.feverFill.setDisplaySize(fillWidth, 3);
+    }
   }
 
   public setPromotion(label?: string): void {
-    this.promotionText.setText(label === undefined ? "" : `홍보 ${label}`);
+    const nextText = label === undefined ? "" : `홍보 ${label}`;
+    if (nextText === this.displayedPromotionText) return;
+    this.displayedPromotionText = nextText;
+    this.promotionText.setText(nextText);
   }
 
   public flashMoney(gain: boolean): void {

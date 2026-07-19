@@ -2,7 +2,7 @@ import type { VisualPhase } from "../types/game";
 
 export type MusicContext = VisualPhase | "menu";
 
-const asset = (name: string): string => `${import.meta.env.BASE_URL}audio/${name}`;
+const asset = (name: string): string => `${import.meta.env?.BASE_URL ?? "/"}audio/${name}`;
 
 const MUSIC_PLAYLISTS: Readonly<Record<MusicContext, readonly string[]>> = {
   menu: [asset("menu.opus")],

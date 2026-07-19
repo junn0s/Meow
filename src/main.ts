@@ -10,6 +10,7 @@ import {
   shouldUseMobilePowerProfile,
 } from "./game/art/Presentation";
 import { bindTouchControls } from "./game/input/TouchControls";
+import { registerServiceWorker } from "./pwa/registerServiceWorker";
 
 const mobilePowerProfile = shouldUseMobilePowerProfile();
 
@@ -43,21 +44,27 @@ const config: Phaser.Types.Core.GameConfig = {
   },
   fps: mobilePowerProfile
     ? { target: 30, limit: 30, min: 20, smoothStep: true }
-    : { target: 60, min: 30, smoothStep: true },
+    : { target: 60, limit: 60, min: 30, smoothStep: true },
   scene: [BootScene, MenuScene, GameScene, ResultScene],
 };
 
 const game = new Phaser.Game(config);
 const removeTouchControls = bindTouchControls();
+registerServiceWorker();
 const requestProgressSave = (): void => {
   game.events.emit("app-before-unload");
 };
 
 window.addEventListener("pagehide", requestProgressSave);
 document.addEventListener("visibilitychange", () => {
-  game.events.emit("app-visibility-change", document.visibilityState === "hidden");
-  if (document.visibilityState === "hidden") {
+  const hidden = document.visibilityState === "hidden";
+  if (hidden) {
+    game.events.emit("app-visibility-change", true);
     requestProgressSave();
+    game.loop.sleep();
+  } else {
+    game.loop.wake();
+    game.events.emit("app-visibility-change", false);
   }
 });
 

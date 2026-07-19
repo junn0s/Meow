@@ -23,18 +23,48 @@ export interface PreparedFood {
   readonly quantity: number;
 }
 
-export function calculateOrderPatienceMs(
+export interface OrderPatienceContext {
+  /** Estimated time already committed to this menu's cooking station. */
+  readonly kitchenQueueDelayMs?: number;
+  /** True while the owner must take orders because no chef is available. */
+  readonly manualOrderTaking?: boolean;
+}
+
+export function calculateSeatWaitPatienceMs(
   basePatienceMs: number,
-  cookingTimeMs: number,
-  quantity = 1,
+  waitingAhead = 0,
 ): number {
   const safeBase = Math.max(1, Number.isFinite(basePatienceMs) ? basePatienceMs : 1);
-  const safeCookingTime = Math.max(0, Number.isFinite(cookingTimeMs) ? cookingTimeMs : 0);
+  const safeWaitingAhead = Math.max(0, Math.floor(waitingAhead));
+  return Math.round(Math.max(18_000, safeBase * 0.75) + safeWaitingAhead * 4_000);
+}
+
+export function calculateOrderPatienceMs(
+  basePatienceMs: number,
+  singleServingCookingTimeMs: number,
+  quantity = 1,
+  context: OrderPatienceContext = {},
+): number {
+  const safeBase = Math.max(1, Number.isFinite(basePatienceMs) ? basePatienceMs : 1);
+  const safeCookingTime = Math.max(
+    0,
+    Number.isFinite(singleServingCookingTimeMs) ? singleServingCookingTimeMs : 0,
+  );
   const safeQuantity = Math.max(1, Math.round(quantity));
-  const cookingAwareBudget = 15_000
-    + safeCookingTime * 1.6
-    + (safeQuantity - 1) * 3_000;
-  return Math.round(Math.max(safeBase, cookingAwareBudget));
+  const safeQueueDelay = Math.max(
+    0,
+    Number.isFinite(context.kitchenQueueDelayMs) ? context.kitchenQueueDelayMs ?? 0 : 0,
+  );
+  const baseBudget = Math.max(25_000, safeBase);
+  const cookingBudget = safeCookingTime * 1.5;
+  const quantityBudget = (safeQuantity - 1) * safeCookingTime * 0.7;
+  const congestionBudget = safeQueueDelay * 0.75;
+  const manualOrderBudget = context.manualOrderTaking
+    ? Math.max(5_000, safeCookingTime * 0.5)
+    : 0;
+  return Math.round(
+    baseBudget + cookingBudget + quantityBudget + congestionBudget + manualOrderBudget,
+  );
 }
 
 export function canSpawnCustomer(

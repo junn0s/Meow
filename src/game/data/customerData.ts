@@ -63,7 +63,16 @@ export function getCustomerData(customerKind: CustomerKind): CustomerData {
 }
 
 export function pickCustomerData(randomValue = Math.random()): CustomerData {
-  const totalWeight = CUSTOMER_DATA.reduce(
+  return pickCustomerDataForKinds(CUSTOMER_DATA.map((customer) => customer.id), randomValue);
+}
+
+export function pickCustomerDataForKinds(
+  customerKinds: readonly CustomerKind[],
+  randomValue = Math.random(),
+): CustomerData {
+  const available = CUSTOMER_DATA.filter((customer) => customerKinds.includes(customer.id));
+  const pool = available.length > 0 ? available : [CUSTOMER_DATA[0]];
+  const totalWeight = pool.reduce(
     (sum, customer) => sum + customer.spawnWeight,
     0,
   );
@@ -72,12 +81,12 @@ export function pickCustomerData(randomValue = Math.random()): CustomerData {
     : 0;
   let cursor = normalizedRandom * totalWeight;
 
-  for (const customer of CUSTOMER_DATA) {
+  for (const customer of pool) {
     cursor -= customer.spawnWeight;
     if (cursor < 0) {
       return customer;
     }
   }
 
-  return CUSTOMER_DATA[0];
+  return pool[0] ?? CUSTOMER_DATA[0];
 }
