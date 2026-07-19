@@ -17,6 +17,7 @@ assert.ok(existsSync(new URL("dist/client/icons/icon-512.png", root)), "512px PW
 assert.equal(manifest.display, "standalone", "PWA must launch without browser chrome");
 assert.equal(manifest.start_url, "./", "PWA start URL must remain compatible with GitHub Pages subpaths");
 assert.deepEqual(manifest.icons.map((icon) => icon.sizes), ["192x192", "512x512"]);
+assert.match(read("scripts/generate-pwa-worker.mjs"), /!request\.headers\.has\("range"\)/u, "partial audio responses must bypass runtime caching");
 assert.ok(existsSync(new URL("dist/server/index.js", root)), "Sites worker build is missing");
 assert.ok(existsSync(new URL("dist/.openai/hosting.json", root)), "staged hosting metadata is missing");
 
@@ -52,9 +53,15 @@ assert.match(main, /limit: 30/u, "touch devices must cap the game loop at 30 FPS
 assert.match(main, /limit: 60/u, "desktop loop must allow runtime performance limits");
 const performanceSystem = read("src/game/systems/PerformanceSystem.ts");
 assert.match(performanceSystem, /targetFps: 24/u, "battery mode must cap gameplay at 24 FPS");
+assert.match(performanceSystem, /automationUpdateIntervalMs/u, "worker dispatch must run on a throttled simulation tick");
+assert.match(performanceSystem, /customerUiUpdateIntervalMs/u, "customer UI rendering must be throttled");
 assert.match(performanceSystem, /reflectionsEnabled: false/u, "battery mode must disable reflections");
 assert.match(atmosphere, /atmosphereUpdateIntervalMs/u, "atmosphere updates must be throttled by profile");
 assert.match(main, /"low-power"/u, "touch devices must request a low-power GPU profile");
+const gameScene = read("src/game/scenes/GameScene.ts");
+assert.match(gameScene, /paymentPool/u, "payment sprites must be pooled instead of recreated");
+assert.doesNotMatch(read("src/game/entities/Player.ts"), /new Phaser\.Math\.Vector2/u, "player input must not allocate vectors every frame");
+assert.match(read("src/game/systems/ProgressionSystem.ts"), /NO_FEVER_TRANSITION/u, "idle fever updates must avoid state allocations");
 assert.match(read("src/game/scenes/GameScene.ts"), /지금 저장/u, "the pause menu must expose manual save");
 const soundManager = read("src/game/audio/SoundManager.ts");
 assert.match(soundManager, /setMenuMusic/u, "menu music must be supported");

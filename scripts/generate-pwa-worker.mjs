@@ -74,7 +74,7 @@ self.addEventListener("fetch", (event) => {
       return cached;
     }
     const response = await fetch(request);
-    if (response.ok) {
+    if (response.ok && response.status === 200 && !request.headers.has("range")) {
       const cache = await caches.open(RUNTIME_CACHE);
       await cache.put(request, response.clone());
     }

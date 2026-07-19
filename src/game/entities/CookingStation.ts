@@ -165,22 +165,29 @@ export class CookingStation {
       return;
     }
 
+    let furthestProgress = 0;
     for (const slot of this.activeSlots) {
       slot.elapsedMs += deltaMs;
+      furthestProgress = Math.max(
+        furthestProgress,
+        Phaser.Math.Clamp(slot.elapsedMs / slot.durationMs, 0, 1),
+      );
     }
-    const furthestProgress = Math.max(...this.activeSlots.map(
-      (slot) => Phaser.Math.Clamp(slot.elapsedMs / slot.durationMs, 0, 1),
-    ));
     this.progressFill.width = 36 * furthestProgress;
 
-    const completed = this.activeSlots.filter((slot) => slot.elapsedMs >= slot.durationMs);
-    if (completed.length === 0) return;
-    for (const slot of completed) {
-      const index = this.activeSlots.indexOf(slot);
-      if (index >= 0) this.activeSlots.splice(index, 1);
+    let completedAny = false;
+    for (let index = 0; index < this.activeSlots.length;) {
+      const slot = this.activeSlots[index];
+      if (slot === undefined || slot.elapsedMs < slot.durationMs) {
+        index += 1;
+        continue;
+      }
+      this.activeSlots.splice(index, 1);
       this.readyTickets.push(slot.ticket);
       this.onFoodReady?.(this, slot.ticket);
+      completedAny = true;
     }
+    if (!completedAny) return;
     this.progressBackground.setVisible(this.activeSlots.length > 0);
     this.progressFill.setVisible(this.activeSlots.length > 0);
     this.readyIcon.setVisible(true);
@@ -350,8 +357,8 @@ export class CookingStation {
       || this.activeSlots.some((slot) => slot.ticket.chefWorkerId === workerId);
   }
 
-  public distanceTo(x: number, y: number): number {
-    return Phaser.Math.Distance.Between(this.x, this.y, x, y);
+  public hasActiveCookingForChef(workerId: string): boolean {
+    return this.activeSlots.some((slot) => slot.ticket.chefWorkerId === workerId);
   }
 
   private startAvailableTickets(): void {

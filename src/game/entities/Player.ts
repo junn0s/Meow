@@ -62,15 +62,15 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     const down = this.cursors?.down.isDown === true
       || this.wasd?.down.isDown === true
       || touchInput.isDirectionDown("down");
-    const direction = new Phaser.Math.Vector2(
-      Number(right) - Number(left),
-      Number(down) - Number(up),
-    );
+    const directionX = Number(right) - Number(left);
+    const directionY = Number(down) - Number(up);
 
-    if (direction.lengthSq() > 0) {
-      direction.normalize().scale(78);
-      body.setVelocity(direction.x, direction.y);
-      this.updateFacing(direction);
+    if (directionX !== 0 || directionY !== 0) {
+      const directionScale = directionX !== 0 && directionY !== 0 ? Math.SQRT1_2 : 1;
+      const velocityX = directionX * 78 * directionScale;
+      const velocityY = directionY * 78 * directionScale;
+      body.setVelocity(velocityX, velocityY);
+      this.updateFacing(velocityX, velocityY);
       this.animationClock += deltaMs;
       if (this.animationClock >= 145) {
         this.animationClock = 0;
@@ -84,8 +84,10 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
     this.x = Phaser.Math.Clamp(this.x, 15, 337);
     this.y = Phaser.Math.Clamp(this.y, 52, 255);
-    this.setTexture(`player-${this.facing}-${this.animationFrame}`);
-    this.setDepth(50 + Math.round(this.y));
+    const textureKey = `player-${this.facing}-${this.animationFrame}`;
+    if (this.texture.key !== textureKey) this.setTexture(textureKey);
+    const targetDepth = 50 + Math.round(this.y / 4) * 4;
+    if (this.depth !== targetDepth) this.setDepth(targetDepth);
     this.updateAvatarGraphics();
     this.updateCarriedSprite();
   }
@@ -152,11 +154,11 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     super.destroy(fromScene);
   }
 
-  private updateFacing(direction: Phaser.Math.Vector2): void {
-    if (Math.abs(direction.x) > Math.abs(direction.y)) {
-      this.facing = direction.x < 0 ? "left" : "right";
+  private updateFacing(directionX: number, directionY: number): void {
+    if (Math.abs(directionX) > Math.abs(directionY)) {
+      this.facing = directionX < 0 ? "left" : "right";
     } else {
-      this.facing = direction.y < 0 ? "up" : "down";
+      this.facing = directionY < 0 ? "up" : "down";
     }
   }
 
@@ -165,15 +167,23 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       return;
     }
 
-    this.carriedSprite.setPosition(this.x, this.y - 22).setDepth(this.depth + 2);
+    if (this.carriedSprite.x !== this.x || this.carriedSprite.y !== this.y - 22) {
+      this.carriedSprite.setPosition(this.x, this.y - 22);
+    }
+    if (this.carriedSprite.depth !== this.depth + 2) {
+      this.carriedSprite.setDepth(this.depth + 2);
+    }
   }
 
   private updateAvatarGraphics(): void {
     const look = this.avatarLook;
     if (look === undefined) return;
-    this.avatarGraphics
-      .setPosition(this.x - 16, this.y - 16)
-      .setDepth(this.depth + 1);
+    if (this.avatarGraphics.x !== this.x - 16 || this.avatarGraphics.y !== this.y - 16) {
+      this.avatarGraphics.setPosition(this.x - 16, this.y - 16);
+    }
+    if (this.avatarGraphics.depth !== this.depth + 1) {
+      this.avatarGraphics.setDepth(this.depth + 1);
+    }
     const renderKey = `${this.facing}:${this.animationFrame}:${look.eyes}:${look.hat}:${look.apron}:${look.accessory}`;
     if (renderKey === this.avatarRenderKey) return;
     this.avatarRenderKey = renderKey;

@@ -32,6 +32,7 @@ const FEVER_REVENUE_MULTIPLIERS = [1, 1.5, 1.65, 1.8] as const;
 const FEVER_COOKING_SPEED_MULTIPLIERS = [1, 1.15, 1.25, 1.35] as const;
 const FEVER_WORKER_SPEED_MULTIPLIERS = [1, 1.12, 1.2, 1.3] as const;
 const FEVER_TIP_CHANCE_BONUSES = [0, 0.08, 0.12, 0.18] as const;
+const NO_FEVER_TRANSITION = Object.freeze({ activated: false, ended: false });
 
 const GENERIC_EFFECTS = [
   { effect: "menu_price", name: "주력 메뉴 가격 I", description: "표시 단가를 올려 주문 한 건의 가치를 키웁니다." },
@@ -265,6 +266,10 @@ export class ProgressionSystem {
   public updateFever(deltaMs: number): { activated: boolean; ended: boolean } {
     const elapsed = Math.max(0, deltaMs);
     const previous = this.state.feverState;
+    if (
+      elapsed === 0
+      || (previous.activeRemainingMs === 0 && previous.cooldownRemainingMs === 0)
+    ) return NO_FEVER_TRANSITION;
     let activeRemainingMs = Math.max(0, previous.activeRemainingMs - elapsed);
     let cooldownRemainingMs = previous.cooldownRemainingMs;
     const ended = previous.activeRemainingMs > 0 && activeRemainingMs === 0;

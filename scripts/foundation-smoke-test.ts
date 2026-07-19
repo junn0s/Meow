@@ -364,9 +364,12 @@ assert.deepEqual(
   "mobile balanced mode must keep the existing 30 FPS power profile",
 );
 assert.equal(getPerformanceProfile("balanced", false).targetFps, 60);
+assert.equal(getPerformanceProfile("balanced", true).automationUpdateIntervalMs, 100);
+assert.equal(getPerformanceProfile("balanced", true).customerUiUpdateIntervalMs, 100);
 assert.equal(getPerformanceProfile("quality", true).lightLimit, 24);
 assert.equal(getPerformanceProfile("battery", true).targetFps, 24);
 assert.equal(getPerformanceProfile("battery", true).reflectionsEnabled, false);
+assert.equal(getPerformanceProfile("battery", true).interactionUpdateIntervalMs, 120);
 
 const storage = new MapStorage();
 storage.setItem("meow-night-diner.save.v2", JSON.stringify({

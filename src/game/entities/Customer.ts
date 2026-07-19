@@ -38,9 +38,12 @@ export class Customer extends Phaser.GameObjects.Container {
   private readonly statusText: Phaser.GameObjects.Text;
   private readonly vipText: Phaser.GameObjects.Text;
   private readonly specialText: Phaser.GameObjects.Text;
+  private readonly heart: Phaser.GameObjects.Image;
   private animationClock = 0;
   private animationFrame = 0;
   private showPatience = false;
+  private patiencePresentationAccumulatorMs = 0;
+  private patienceBand = -1;
 
   public constructor(
     scene: Phaser.Scene,
@@ -119,6 +122,7 @@ export class Customer extends Phaser.GameObjects.Container {
       })
       .setOrigin(0.5)
       .setVisible(this.isSpecialOrder);
+    this.heart = scene.add.image(0, -25, "heart").setAlpha(0).setVisible(false);
 
     this.add([
       this.nightRim,
@@ -131,9 +135,10 @@ export class Customer extends Phaser.GameObjects.Container {
       this.statusText,
       this.vipText,
       this.specialText,
+      this.heart,
     ]);
     scene.add.existing(this);
-    this.setDepth(40 + Math.round(y));
+    this.setDepth(40 + Math.round(y / 4) * 4);
   }
 
   public setCustomerState(state: CustomerState): void {
@@ -145,6 +150,8 @@ export class Customer extends Phaser.GameObjects.Container {
       || state === CustomerState.WAITING_FOR_FOOD;
     this.patienceBackground.setVisible(this.showPatience);
     this.patienceFill.setVisible(this.showPatience);
+    this.patiencePresentationAccumulatorMs = Number.POSITIVE_INFINITY;
+    this.patienceBand = -1;
 
     if (state === CustomerState.EATING) {
       this.bubble.setVisible(false);
@@ -161,28 +168,33 @@ export class Customer extends Phaser.GameObjects.Container {
 
   public updateMovement(deltaMs: number): boolean {
     this.stateElapsedMs += deltaMs;
-    const distance = Phaser.Math.Distance.Between(this.x, this.y, this.targetX, this.targetY);
-    if (distance <= 1.2) {
+    const deltaX = this.targetX - this.x;
+    const deltaY = this.targetY - this.y;
+    const distanceSquared = deltaX * deltaX + deltaY * deltaY;
+    if (distanceSquared <= 1.44) {
       this.setPosition(this.targetX, this.targetY);
-      this.character.setTexture(`customer-${this.kind}-0`);
-      this.nightRim.setTexture(`customer-${this.kind}-0`);
+      const idleTexture = `customer-${this.kind}-0`;
+      if (this.character.texture.key !== idleTexture) this.character.setTexture(idleTexture);
+      if (this.nightRim.texture.key !== idleTexture) this.nightRim.setTexture(idleTexture);
       return true;
     }
 
+    const distance = Math.sqrt(distanceSquared);
     const step = Math.min(distance, this.moveSpeed * (deltaMs / 1000));
-    const angle = Phaser.Math.Angle.Between(this.x, this.y, this.targetX, this.targetY);
-    this.x += Math.cos(angle) * step;
-    this.y += Math.sin(angle) * step;
+    this.x += deltaX / distance * step;
+    this.y += deltaY / distance * step;
     this.animationClock += deltaMs;
     if (this.animationClock >= 190) {
       this.animationClock = 0;
       this.animationFrame = this.animationFrame === 0 ? 1 : 0;
       if (this.x >= -8 && this.x <= 358 && this.y >= 32 && this.y <= 270) {
-        this.character.setTexture(`customer-${this.kind}-${this.animationFrame}`);
-        this.nightRim.setTexture(`customer-${this.kind}-${this.animationFrame}`);
+        const textureKey = `customer-${this.kind}-${this.animationFrame}`;
+        if (this.character.texture.key !== textureKey) this.character.setTexture(textureKey);
+        if (this.nightRim.texture.key !== textureKey) this.nightRim.setTexture(textureKey);
       }
     }
-    this.setDepth(40 + Math.round(this.y));
+    const targetDepth = 40 + Math.round(this.y / 4) * 4;
+    if (this.depth !== targetDepth) this.setDepth(targetDepth);
     return false;
   }
 
@@ -209,7 +221,7 @@ export class Customer extends Phaser.GameObjects.Container {
     this.setCustomerState(CustomerState.WAITING_FOR_FOOD);
   }
 
-  public tickPatience(deltaMs: number): void {
+  public tickPatience(deltaMs: number, presentationIntervalMs = 100): void {
     this.stateElapsedMs += deltaMs;
     if (!this.showPatience) {
       this.statusText.setVisible(false);
@@ -218,14 +230,22 @@ export class Customer extends Phaser.GameObjects.Container {
 
     const multiplier = this.customerState === CustomerState.ORDERING ? 1.25 : 1;
     this.patienceMs = Math.max(0, this.patienceMs - deltaMs * multiplier);
+    this.patiencePresentationAccumulatorMs += deltaMs;
+    if (
+      this.patienceMs > 0
+      && this.patiencePresentationAccumulatorMs < Math.max(50, presentationIntervalMs)
+    ) return;
+    this.patiencePresentationAccumulatorMs = 0;
     const ratio = this.getPatienceRatio();
     this.patienceFill.width = 24 * ratio;
-    this.patienceFill.setFillStyle(
-      ratio > 0.58 ? 0x77d48b : ratio > 0.28 ? 0xf3bc61 : 0xe85a59,
-    );
-    this.statusText
-      .setText(ratio > 0.58 ? "" : ratio > 0.28 ? "!" : "!!")
-      .setVisible(ratio <= 0.58);
+    const nextBand = ratio > 0.58 ? 0 : ratio > 0.28 ? 1 : 2;
+    if (nextBand !== this.patienceBand) {
+      this.patienceBand = nextBand;
+      this.patienceFill.setFillStyle(nextBand === 0 ? 0x77d48b : nextBand === 1 ? 0xf3bc61 : 0xe85a59);
+      this.statusText
+        .setText(nextBand === 0 ? "" : nextBand === 1 ? "!" : "!!")
+        .setVisible(nextBand > 0);
+    }
   }
 
   public serveOne(quantity = 1): boolean {
@@ -249,11 +269,8 @@ export class Customer extends Phaser.GameObjects.Container {
   public tickEating(deltaMs: number): boolean {
     this.stateElapsedMs += deltaMs;
     this.eatingRemainingMs = Math.max(0, this.eatingRemainingMs - deltaMs);
-    if (Math.floor(this.eatingRemainingMs / 420) % 2 === 0) {
-      this.character.setY(-1);
-    } else {
-      this.character.setY(0);
-    }
+    const bobY = Math.floor(this.eatingRemainingMs / 420) % 2 === 0 ? -1 : 0;
+    if (this.character.y !== bobY) this.character.setY(bobY);
     return this.eatingRemainingMs <= 0;
   }
 
@@ -264,14 +281,15 @@ export class Customer extends Phaser.GameObjects.Container {
   }
 
   public showHeart(): void {
-    const heart = this.scene.add.image(this.x, this.y - 25, "heart").setDepth(this.depth + 20);
+    this.scene.tweens.killTweensOf(this.heart);
+    this.heart.setPosition(0, -25).setAlpha(1).setVisible(true);
     this.scene.tweens.add({
-      targets: heart,
-      y: heart.y - 14,
+      targets: this.heart,
+      y: -39,
       alpha: 0,
       duration: 820,
       ease: "Sine.Out",
-      onComplete: () => heart.destroy(),
+      onComplete: () => this.heart.setVisible(false),
     });
   }
 

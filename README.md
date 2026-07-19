@@ -13,7 +13,7 @@ The game runs directly in a modern desktop or mobile browser and can also be ins
 - iPhone or iPad: open the game in Safari, tap **Share**, choose **Add to Home Screen**, enable **Open as Web App**, and tap **Add**.
 - Android: open the game in Chrome, open the browser menu, then choose **Install app** or **Add to Home screen**.
 
-The installed game launches in a standalone window. Its core game files and menu music remain available offline after the first successful load; other background tracks are cached as they are played.
+The installed game launches in a standalone window. Its core game files and menu music remain available offline after the first successful load; gameplay tracks continue to stream so mobile browsers can use efficient range requests.
 
 ## Gameplay
 

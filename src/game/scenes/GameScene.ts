@@ -19,7 +19,6 @@ import {
   type OfflineRewardResult,
 } from "../systems/OfflineEarningsSystem";
 import { DEFAULT_GAME_SETTINGS, SaveSystem } from "../systems/SaveSystem";
-import { canStartCookingTicket } from "../systems/CookingFlowRules";
 import { getFameBenefits, type FameBenefits } from "../systems/FameSystem";
 import {
   getPerformanceModeLabel,
@@ -118,7 +117,22 @@ const SERVER_HOME_POSITIONS = [
 ] as const;
 
 const AUTO_ORDER_DELAY_MS = 720;
-const SAVE_INTERVAL_MS = 4_000;
+const SAVE_INTERVAL_MS = 8_000;
+const MAX_POOLED_PAYMENTS = 24;
+const RUSH_CONFIGS: Partial<Record<GrowthStage, RushConfig>> = {
+  25: { periodMs: 90_000, durationMs: 25_000, spawnMultiplier: 0.65 },
+  26: { periodMs: 85_000, durationMs: 25_000, spawnMultiplier: 0.65 },
+  27: { periodMs: 80_000, durationMs: 27_000, spawnMultiplier: 0.62 },
+  28: { periodMs: 75_000, durationMs: 27_000, spawnMultiplier: 0.6 },
+  29: { periodMs: 70_000, durationMs: 30_000, spawnMultiplier: 0.58 },
+  30: { periodMs: 60_000, durationMs: 30_000, spawnMultiplier: 0.55 },
+};
+
+interface RushConfig {
+  readonly periodMs: number;
+  readonly durationMs: number;
+  readonly spawnMultiplier: number;
+}
 
 export class GameScene extends Phaser.Scene {
   private saveSystem!: SaveSystem;
@@ -142,6 +156,7 @@ export class GameScene extends Phaser.Scene {
   private readonly servers: WorkerAgent[] = [];
   private readonly chefAssignedCustomers = new Set<string>();
   private readonly serverTargetCustomerIds = new Set<string>();
+  private paymentPool!: Phaser.GameObjects.Group;
   private spawnCountdownMs = 850;
   private saveCountdownMs = SAVE_INTERVAL_MS;
   private elapsedMs = 0;
@@ -149,6 +164,9 @@ export class GameScene extends Phaser.Scene {
   private customerSerial = 0;
   private workerAnimationClock = 0;
   private workerAnimationFrame = 0;
+  private automationAccumulatorMs = 0;
+  private eventAccumulatorMs = 0;
+  private interactionAccumulatorMs = 0;
   private presentationAccumulatorMs = 0;
   private interactionMarker!: Phaser.GameObjects.Image;
   private interactionText!: Phaser.GameObjects.Text;
@@ -179,8 +197,9 @@ export class GameScene extends Phaser.Scene {
   private mobilePowerProfile = false;
   private performanceMode: PerformanceMode = "balanced";
   private performanceProfile: PerformanceProfile = getPerformanceProfile("balanced", false);
+  private smoothedGameplayDeltaMs = 0;
+  private gameplayFrameCount = 0;
   private feverWarningShown = false;
-  private readonly frameSamples: number[] = [];
   private ticketStats = { accepted: 0, completed: 0, served: 0, cancelled: 0, wasted: 0, duplicateServices: 0 };
   private removeEconomyListener?: () => void;
   private removeProgressionListener?: () => void;
@@ -268,6 +287,7 @@ export class GameScene extends Phaser.Scene {
     this.player.setOwnerTint(this.customization.getSelected().tint);
     this.player.setAvatarLook(this.customization.getAvatarLook());
     this.createWorkers();
+    this.createTransientPools();
     this.applyEffects(this.currentEffects, false);
     this.hud = new HUD(this);
     this.hud.setWorldTime(initialVisualState);
@@ -299,8 +319,10 @@ export class GameScene extends Phaser.Scene {
 
   public override update(_time: number, deltaMs: number): void {
     const stepMs = Math.min(deltaMs, 64);
-    this.frameSamples.push(stepMs);
-    if (this.frameSamples.length > 120) this.frameSamples.shift();
+    this.smoothedGameplayDeltaMs = this.smoothedGameplayDeltaMs === 0
+      ? stepMs
+      : this.smoothedGameplayDeltaMs * 0.9 + stepMs * 0.1;
+    this.gameplayFrameCount += 1;
     this.hud.update(stepMs);
     if (this.appHidden || this.isPaused || this.tutorialOverlay !== undefined || this.clearing) {
       this.sfx.setMusicPaused(true);
@@ -310,20 +332,18 @@ export class GameScene extends Phaser.Scene {
 
     this.elapsedMs += stepMs;
     this.presentationAccumulatorMs += stepMs;
-    const visualState = this.dayNight.update(stepMs);
-    if (visualState.phase !== this.currentVisualPhase) {
-      this.currentVisualPhase = visualState.phase;
-      this.decor.setPhase(visualState.phase);
-      this.atmosphere.setPhase(visualState.phase);
-      this.sfx.setAmbience(visualState.phase, this.reducedMotion, visualState.phaseTrackIndex, visualState.phaseElapsedMs);
-      for (const customer of this.customers.values()) {
-        customer.setNightMode(visualState.phase === "night");
+    const presentationIntervalMs = Math.max(50, this.performanceProfile.uiUpdateIntervalMs);
+    if (this.presentationAccumulatorMs >= presentationIntervalMs) {
+      const visualState = this.dayNight.update(this.presentationAccumulatorMs);
+      if (visualState.phase !== this.currentVisualPhase) {
+        this.currentVisualPhase = visualState.phase;
+        this.decor.setPhase(visualState.phase);
+        this.atmosphere.setPhase(visualState.phase);
+        this.sfx.setAmbience(visualState.phase, this.reducedMotion, visualState.phaseTrackIndex, visualState.phaseElapsedMs);
+        for (const customer of this.customers.values()) {
+          customer.setNightMode(visualState.phase === "night");
+        }
       }
-    }
-    if (
-      this.performanceProfile.uiUpdateIntervalMs === 0
-      || this.presentationAccumulatorMs >= this.performanceProfile.uiUpdateIntervalMs
-    ) {
       this.hud.setElapsedTime(this.elapsedMs);
       this.hud.setWorldTime(visualState);
       this.presentationAccumulatorMs = 0;
@@ -334,11 +354,20 @@ export class GameScene extends Phaser.Scene {
     this.updateCustomers(stepMs);
     this.updateStations(stepMs);
     this.updateWorkers(stepMs);
-    this.updateRush(stepMs);
-    this.updateFeverAndPromotion(stepMs);
+    this.eventAccumulatorMs += stepMs;
+    if (this.eventAccumulatorMs >= this.performanceProfile.automationUpdateIntervalMs) {
+      const eventDeltaMs = this.eventAccumulatorMs;
+      this.eventAccumulatorMs = 0;
+      this.updateRush(eventDeltaMs);
+      this.updateFeverAndPromotion(eventDeltaMs);
+    }
     this.updatePayments(stepMs);
     this.updateSpawner(stepMs);
-    this.updateInteractionIndicator();
+    this.interactionAccumulatorMs += stepMs;
+    if (this.interactionAccumulatorMs >= this.performanceProfile.interactionUpdateIntervalMs) {
+      this.interactionAccumulatorMs = 0;
+      this.updateInteractionIndicator();
+    }
 
     this.saveCountdownMs -= stepMs;
     if (this.saveCountdownMs <= 0) {
@@ -361,6 +390,9 @@ export class GameScene extends Phaser.Scene {
     this.customerSerial = 0;
     this.workerAnimationClock = 0;
     this.workerAnimationFrame = 0;
+    this.automationAccumulatorMs = 0;
+    this.eventAccumulatorMs = 0;
+    this.interactionAccumulatorMs = 0;
     this.presentationAccumulatorMs = 0;
     this.isPaused = false;
     this.appHidden = false;
@@ -383,7 +415,8 @@ export class GameScene extends Phaser.Scene {
     this.promotionSerial = 0;
     this.offlineReward = undefined;
     this.feverWarningShown = false;
-    this.frameSamples.length = 0;
+    this.smoothedGameplayDeltaMs = 0;
+    this.gameplayFrameCount = 0;
     this.ticketStats = { accepted: 0, completed: 0, served: 0, cancelled: 0, wasted: 0, duplicateServices: 0 };
   }
 
@@ -407,18 +440,22 @@ export class GameScene extends Phaser.Scene {
       station.setCookingTimeResolver((quantity) =>
         this.progression.getMenuCookingTimeMs(definition.menuItemId, quantity)
           * this.customization.getFacilityEffects().cookingTimeMultiplier);
-      station.setCanStartNextResolver((ticket) => {
-        const activeTickets = [...this.stations.values()].flatMap(
-          (candidate) => [...candidate.getActiveTickets()],
-        );
-        return canStartCookingTicket(
-          ticket,
-          activeTickets,
-          this.currentEffects.cookingSlotCount,
-        );
-      });
+      station.setCanStartNextResolver((ticket) => this.canStartCookingTicket(ticket));
       this.stations.set(definition.menuItemId, station);
     }
+  }
+
+  private canStartCookingTicket(ticket: CookingTicket): boolean {
+    let activeCount = 0;
+    const cookingSlotCount = Math.max(1, Math.floor(this.currentEffects.cookingSlotCount));
+    for (const station of this.stations.values()) {
+      activeCount += station.getActiveCount();
+      if (
+        ticket.chefWorkerId !== undefined
+        && station.hasActiveCookingForChef(ticket.chefWorkerId)
+      ) return false;
+    }
+    return activeCount < cookingSlotCount;
   }
 
   private createTables(targetCount: number): void {
@@ -469,6 +506,37 @@ export class GameScene extends Phaser.Scene {
         homeY: serverY,
         busy: false,
       });
+    }
+  }
+
+  private createTransientPools(): void {
+    this.paymentPool = this.add.group({
+      classType: Phaser.GameObjects.Image,
+      maxSize: MAX_POOLED_PAYMENTS,
+      runChildUpdate: false,
+    });
+  }
+
+  private acquirePaymentImage(x: number, y: number): Phaser.GameObjects.Image {
+    const pooled = this.paymentPool.get(x, y, "coin") as Phaser.GameObjects.Image | null;
+    const image = pooled ?? this.add.image(x, y, "coin");
+    return image
+      .setPosition(x, y)
+      .setTexture("coin")
+      .setAlpha(1)
+      .setScale(1)
+      .setActive(true)
+      .setVisible(true)
+      .setDepth(520);
+  }
+
+  private releasePaymentImage(image: Phaser.GameObjects.Image): void {
+    this.tweens.killTweensOf(image);
+    if (this.paymentPool.contains(image)) {
+      this.paymentPool.killAndHide(image);
+      image.setAlpha(1).setScale(1);
+    } else {
+      image.destroy();
     }
   }
 
@@ -554,11 +622,13 @@ export class GameScene extends Phaser.Scene {
       0.4,
       fame.specialOrderChance + this.customization.getFacilityEffects().specialOrderChanceBonus,
     );
-    const waitingIndex = [...this.customers.values()].filter(
-      (other) =>
-        other.customerState === CustomerState.ENTERING ||
-        other.customerState === CustomerState.WAITING_FOR_SEAT,
-    ).length;
+    let waitingIndex = 0;
+    for (const other of this.customers.values()) {
+      if (
+        other.customerState === CustomerState.ENTERING
+        || other.customerState === CustomerState.WAITING_FOR_SEAT
+      ) waitingIndex += 1;
+    }
     const basePatienceMs = Math.round(
       stageConfig.basePatienceMs * kindPatienceMultiplier * (vip ? 1.25 : 1)
         * this.customization.getFacilityEffects().patienceMultiplier,
@@ -653,8 +723,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private updateCustomers(deltaMs: number): void {
-    const customers = [...this.customers.values()];
-    for (const customer of customers) {
+    for (const customer of this.customers.values()) {
       switch (customer.customerState) {
         case CustomerState.ENTERING:
           if (customer.updateMovement(deltaMs)) {
@@ -662,7 +731,7 @@ export class GameScene extends Phaser.Scene {
           }
           break;
         case CustomerState.WAITING_FOR_SEAT:
-          customer.tickPatience(deltaMs);
+          customer.tickPatience(deltaMs, this.performanceProfile.customerUiUpdateIntervalMs);
           if (customer.patienceMs <= 0) {
             this.handleCustomerWalkout(customer);
             break;
@@ -675,14 +744,14 @@ export class GameScene extends Phaser.Scene {
           }
           break;
         case CustomerState.ORDERING:
-          customer.tickPatience(deltaMs);
+          customer.tickPatience(deltaMs, this.performanceProfile.customerUiUpdateIntervalMs);
           if (customer.patienceMs <= 0) {
             this.handleCustomerWalkout(customer);
             break;
           }
           break;
         case CustomerState.WAITING_FOR_FOOD:
-          customer.tickPatience(deltaMs);
+          customer.tickPatience(deltaMs, this.performanceProfile.customerUiUpdateIntervalMs);
           if (customer.patienceMs <= 0) {
             this.handleCustomerWalkout(customer);
           }
@@ -703,7 +772,7 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
-    for (const customer of customers) {
+    for (const customer of this.customers.values()) {
       if (customer.customerState === CustomerState.WAITING_FOR_SEAT) {
         this.tryAssignSeat(customer);
       }
@@ -891,7 +960,7 @@ export class GameScene extends Phaser.Scene {
           x: station.x,
           y: station.y + 18,
           duration: 220,
-          onUpdate: () => chef.sprite.setDepth(70 + Math.round(chef.sprite.y)),
+          onUpdate: () => updateCharacterDepth(chef.sprite, 70),
         });
         this.pulseWorker(chef.sprite);
       }
@@ -917,7 +986,7 @@ export class GameScene extends Phaser.Scene {
       x: station.x + 10,
       y: station.y + 18,
       duration: 220,
-      onUpdate: () => chef.sprite.setDepth(70 + Math.round(chef.sprite.y)),
+      onUpdate: () => updateCharacterDepth(chef.sprite, 70),
     });
     return chef.id;
   }
@@ -944,19 +1013,27 @@ export class GameScene extends Phaser.Scene {
         server.sprite.setTexture(`server-${server.ordinal}-${frame}`);
       }
     }
+    this.automationAccumulatorMs += deltaMs;
+    if (this.automationAccumulatorMs < this.performanceProfile.automationUpdateIntervalMs) return;
+    this.automationAccumulatorMs = 0;
     this.dispatchChefOrders();
     this.dispatchServerDeliveries();
   }
 
   private dispatchChefOrders(): void {
-    const ordering = [...this.customers.values()].filter(
-      (customer) => customer.customerState === CustomerState.ORDERING
-        && customer.stateElapsedMs >= AUTO_ORDER_DELAY_MS
-        && !this.chefAssignedCustomers.has(customer.customerId),
-    );
     for (const chef of this.chefs) {
       if (!chef.sprite.visible || chef.busy) continue;
-      const customer = ordering.shift();
+      let customer: Customer | undefined;
+      for (const candidate of this.customers.values()) {
+        if (
+          candidate.customerState === CustomerState.ORDERING
+          && candidate.stateElapsedMs >= AUTO_ORDER_DELAY_MS
+          && !this.chefAssignedCustomers.has(candidate.customerId)
+        ) {
+          customer = candidate;
+          break;
+        }
+      }
       if (customer === undefined) break;
       chef.busy = true;
       chef.assignedCustomerId = customer.customerId;
@@ -969,7 +1046,7 @@ export class GameScene extends Phaser.Scene {
         x: customer.x - 15,
         y: customer.y,
         duration: Math.min(320, actionTime * 0.35),
-        onUpdate: () => chef.sprite.setDepth(70 + Math.round(chef.sprite.y)),
+        onUpdate: () => updateCharacterDepth(chef.sprite, 70),
       });
       this.time.delayedCall(actionTime, () => {
         this.chefAssignedCustomers.delete(customer.customerId);
@@ -1028,7 +1105,7 @@ export class GameScene extends Phaser.Scene {
       y: station.y + 20,
       duration: Math.round(actionTime * 0.2),
       ease: "Sine.InOut",
-      onUpdate: () => server.setDepth(50 + Math.round(server.y)),
+      onUpdate: () => updateCharacterDepth(server, 50),
       onComplete: () => {
         if (!server.active || !canReceiveFood(target, ticket)) {
           if (ticket.customerId === target.customerId) {
@@ -1046,7 +1123,7 @@ export class GameScene extends Phaser.Scene {
           y: target.y,
           duration: Math.round(actionTime * 0.45),
           ease: "Sine.InOut",
-          onUpdate: () => server.setDepth(50 + Math.round(server.y)),
+          onUpdate: () => updateCharacterDepth(server, 50),
           onComplete: () => {
             if (target.active && canReceiveFood(target, ticket)) {
               this.serveCustomer(target, true, worker, ticket);
@@ -1065,7 +1142,7 @@ export class GameScene extends Phaser.Scene {
               y: worker.homeY,
               duration: Math.round(actionTime * 0.25),
               ease: "Sine.InOut",
-              onUpdate: () => server.setDepth(50 + Math.round(server.y)),
+              onUpdate: () => updateCharacterDepth(server, 50),
               onComplete: () => this.releaseServer(worker, false),
             });
           },
@@ -1166,9 +1243,10 @@ export class GameScene extends Phaser.Scene {
         : this.comboCount >= 5
           ? 1.05
           : 1;
-    const image = this.add
-      .image(table?.seatPosition.x ?? customer.x, (table?.seatPosition.y ?? customer.y) + 4, "coin")
-      .setDepth(520);
+    const image = this.acquirePaymentImage(
+      table?.seatPosition.x ?? customer.x,
+      (table?.seatPosition.y ?? customer.y) + 4,
+    );
     this.tweens.add({
       targets: image,
       y: image.y - 3,
@@ -1201,12 +1279,9 @@ export class GameScene extends Phaser.Scene {
         continue;
       }
       payment.ageMs += deltaMs;
-      const playerReached = Phaser.Math.Distance.Between(
-        this.player.x,
-        this.player.y,
-        payment.image.x,
-        payment.image.y,
-      ) <= 16;
+      const distanceX = this.player.x - payment.image.x;
+      const distanceY = this.player.y - payment.image.y;
+      const playerReached = distanceX * distanceX + distanceY * distanceY <= 256;
       const autoCollect = this.currentEffects.serverHired && payment.ageMs >= 650;
       if (playerReached || autoCollect) {
         this.collectPayment(payment, index);
@@ -1244,13 +1319,11 @@ export class GameScene extends Phaser.Scene {
     }
     const x = payment.image.x;
     const y = payment.image.y;
-    this.tweens.killTweensOf(payment.image);
-    payment.image.destroy();
+    this.releasePaymentImage(payment.image);
     this.pendingPayments.splice(index, 1);
     this.sfx.coin();
     this.hud.flashMoney(true);
     this.showMoneyPopup(x, y, result.totalAmount, result.tipAmount);
-    this.saveProgress();
     if (this.progression.isGameComplete()) {
       this.beginClearSequence();
     }
@@ -1287,7 +1360,7 @@ export class GameScene extends Phaser.Scene {
         `${getMenuItem(this.promotionMenuId).name} ${Math.ceil(this.promotionRemainingMs / 1_000)}s`,
       );
     }
-    this.refreshServiceLightMode();
+    this.refreshServiceLightMode(fever.activeRemainingMs > 0);
   }
 
   private startMenuPromotion(menuItemId?: MenuItemId): boolean {
@@ -1303,14 +1376,16 @@ export class GameScene extends Phaser.Scene {
     return true;
   }
 
-  private refreshServiceLightMode(): void {
+  private refreshServiceLightMode(
+    feverActive = this.progression.getFeverState().activeRemainingMs > 0,
+  ): void {
     const mode: ServiceLightMode = this.rushRemainingMs > 0
       ? "rush"
-      : this.progression.getFeverState().activeRemainingMs > 0
+      : feverActive
         ? "fever"
         : "normal";
     this.atmosphere.setServiceMode(mode);
-    this.sfx.setFeverActive(this.progression.getFeverState().activeRemainingMs > 0);
+    this.sfx.setFeverActive(feverActive);
   }
 
   private showMoneyPopup(x: number, y: number, amount: number, tip: number): void {
@@ -1400,14 +1475,16 @@ export class GameScene extends Phaser.Scene {
     }
 
     let nearestStation: CookingStation | undefined;
-    let nearestDistance = Number.POSITIVE_INFINITY;
+    let nearestDistanceSquared = 39 * 39;
     for (const station of this.stations.values()) {
       if (station.getReadyCount() === 0) {
         continue;
       }
-      const distance = station.distanceTo(this.player.x, this.player.y);
-      if (distance <= 39 && distance < nearestDistance) {
-        nearestDistance = distance;
+      const distanceX = station.x - this.player.x;
+      const distanceY = station.y - this.player.y;
+      const distanceSquared = distanceX * distanceX + distanceY * distanceY;
+      if (distanceSquared <= nearestDistanceSquared) {
+        nearestDistanceSquared = distanceSquared;
         nearestStation = station;
       }
     }
@@ -1427,15 +1504,17 @@ export class GameScene extends Phaser.Scene {
     maximumDistance: number,
   ): Customer | undefined {
     let nearest: Customer | undefined;
-    let nearestDistance = maximumDistance;
+    let nearestDistanceSquared = maximumDistance * maximumDistance;
     for (const customer of this.customers.values()) {
       if (!predicate(customer)) {
         continue;
       }
-      const distance = Phaser.Math.Distance.Between(this.player.x, this.player.y, customer.x, customer.y);
-      if (distance <= nearestDistance) {
+      const distanceX = this.player.x - customer.x;
+      const distanceY = this.player.y - customer.y;
+      const distanceSquared = distanceX * distanceX + distanceY * distanceY;
+      if (distanceSquared <= nearestDistanceSquared) {
         nearest = customer;
-        nearestDistance = distance;
+        nearestDistanceSquared = distanceSquared;
       }
     }
     return nearest;
@@ -2429,12 +2508,10 @@ export class GameScene extends Phaser.Scene {
   }
 
   private releaseChefIfCookingComplete(workerId: string): void {
-    const hasPendingCooking = [...this.stations.values()].some(
-      (station) => station.hasPendingCookingForChef(workerId),
-    );
-    if (!hasPendingCooking) {
-      this.releaseChef(workerId);
+    for (const station of this.stations.values()) {
+      if (station.hasPendingCookingForChef(workerId)) return;
     }
+    this.releaseChef(workerId);
   }
 
   private releaseChef(workerId: string): void {
@@ -2538,10 +2615,10 @@ export class GameScene extends Phaser.Scene {
         })),
         atmosphere: this.atmosphere.getDiagnostics(),
         performance: {
-          averageFps: this.frameSamples.length === 0
+          averageFps: this.smoothedGameplayDeltaMs <= 0
             ? 0
-            : Math.round(1_000 / (this.frameSamples.reduce((sum, sample) => sum + sample, 0) / this.frameSamples.length)),
-          sampleCount: this.frameSamples.length,
+            : Math.round(1_000 / this.smoothedGameplayDeltaMs),
+          sampleCount: this.gameplayFrameCount,
           targetFps: this.performanceProfile.targetFps,
           mode: this.performanceMode,
           mobileProfile: this.mobilePowerProfile,
@@ -2693,6 +2770,14 @@ type MutableTimeStep = Phaser.Core.TimeStep & {
   _target: number;
 };
 
+function updateCharacterDepth(
+  character: Phaser.GameObjects.Image,
+  baseDepth: number,
+): void {
+  const targetDepth = baseDepth + Math.round(character.y / 4) * 4;
+  if (character.depth !== targetDepth) character.setDepth(targetDepth);
+}
+
 function applyGameLoopFpsLimit(loop: Phaser.Core.TimeStep, fps: number): void {
   const normalizedFps = Math.max(20, Math.min(60, Math.round(fps)));
   const mutable = loop as MutableTimeStep;
@@ -2703,23 +2788,8 @@ function applyGameLoopFpsLimit(loop: Phaser.Core.TimeStep, fps: number): void {
   mutable._limitRate = 1_000 / normalizedFps;
 }
 
-function getRushConfig(stage: GrowthStage): {
-  readonly periodMs: number;
-  readonly durationMs: number;
-  readonly spawnMultiplier: number;
-} | undefined {
-  const configs = {
-    25: [90_000, 25_000, 0.65],
-    26: [85_000, 25_000, 0.65],
-    27: [80_000, 27_000, 0.62],
-    28: [75_000, 27_000, 0.6],
-    29: [70_000, 30_000, 0.58],
-    30: [60_000, 30_000, 0.55],
-  } as const;
-  const config = configs[stage as keyof typeof configs];
-  return config === undefined
-    ? undefined
-    : { periodMs: config[0], durationMs: config[1], spawnMultiplier: config[2] };
+function getRushConfig(stage: GrowthStage): RushConfig | undefined {
+  return RUSH_CONFIGS[stage];
 }
 
 function readDebugStage(search: string): GrowthStage | undefined {
