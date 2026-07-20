@@ -54,7 +54,7 @@ Key features include:
 | Action | Control |
 | --- | --- |
 | Move the owner cat | `WASD` or arrow keys |
-| Take an order, pick up food, or serve | `Space` |
+| Take an order, start cooking at its worktop, pick up food, or serve | `Space` |
 | Pause or open settings | `Esc` |
 | Save immediately | Open settings, then select `지금 저장` |
 | Toggle sound effects | `M` |
@@ -65,12 +65,12 @@ Key features include:
 | Action | Control |
 | --- | --- |
 | Move the owner cat | Hold the on-screen directional pad |
-| Take an order, pick up food, or serve | Tap the round action button |
+| Take an order, start cooking at its worktop, pick up food, or serve | Tap the round action button |
 | Pause or open settings | Tap the pause button |
 | Save immediately | Open settings, then tap `지금 저장` |
 | Use menus and buy upgrades | Tap the desired button |
 
-Before hiring workers, the owner cat handles orders and serving manually. Each chef manages one cooking task at a time, while each server independently delivers a ready dish to any compatible waiting customer.
+Orders taken by the owner wait at their matching worktop until the owner starts cooking them. The owner has one manual cooking slot separate from the hired chefs, so the owner can cook fishcake while a chef prepares tteokbokki. Each server independently delivers a ready dish to any compatible waiting customer.
 
 ## Source Directory
 

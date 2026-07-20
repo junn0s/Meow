@@ -165,7 +165,7 @@ export interface ProgressionEffects {
   readonly customerSpawnIntervalMultiplier: number;
   readonly chefCount: number;
   readonly serverCount: number;
-  /** Total simultaneous cooking jobs, including the owner's initial slot. */
+  /** Simultaneous hired-chef jobs. The owner always has one separate manual slot. */
   readonly cookingSlotCount: number;
   readonly chefHired: boolean;
   readonly serverHired: boolean;

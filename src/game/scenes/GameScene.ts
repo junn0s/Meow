@@ -446,16 +446,21 @@ export class GameScene extends Phaser.Scene {
   }
 
   private canStartCookingTicket(ticket: CookingTicket): boolean {
-    let activeCount = 0;
+    let activeChefCount = 0;
+    let playerCooking = false;
     const cookingSlotCount = Math.max(1, Math.floor(this.currentEffects.cookingSlotCount));
     for (const station of this.stations.values()) {
-      activeCount += station.getActiveCount();
+      activeChefCount += station.getActiveChefCount();
+      playerCooking ||= station.hasActivePlayerCooking();
       if (
         ticket.chefWorkerId !== undefined
         && station.hasActiveCookingForChef(ticket.chefWorkerId)
       ) return false;
     }
-    return activeCount < cookingSlotCount;
+    if (ticket.cookingAgent === "player") {
+      return ticket.playerStarted === true && !playerCooking;
+    }
+    return activeChefCount < cookingSlotCount;
   }
 
   private createTables(targetCount: number): void {
@@ -938,13 +943,15 @@ export class GameScene extends Phaser.Scene {
     for (let serving = 1; serving <= customer.orderQuantity; serving += 1) {
       const servingChefWorkerId = serving === 1
         ? chefWorkerId
-        : this.claimExtraChefForCooking(customer, station);
+        : this.claimExtraChefForCooking(customer, station) ?? chefWorkerId;
       const ticket: CookingTicket = {
         customerId: customer.customerId,
         menuItemId: customer.orderId,
         quantity: 1,
         cookingTimeMs: perServingCookingTimeMs,
         chefWorkerId: servingChefWorkerId,
+        cookingAgent: automated ? "chef" : "player",
+        playerStarted: automated ? undefined : false,
       };
       station.enqueue(ticket);
       this.ticketStats.accepted += 1;
@@ -965,9 +972,11 @@ export class GameScene extends Phaser.Scene {
         this.pulseWorker(chef.sprite);
       }
     } else {
-      this.toast.show(`${getMenuItem(customer.orderId).name} 주문 접수!`, "success");
+      this.toast.show(`${getMenuItem(customer.orderId).name} 주문 접수! 조리대로 가세요`, "success");
     }
-    setStatus(`${getMenuItem(customer.orderId).name} 주문이 접수되어 조리를 시작합니다.`);
+    setStatus(automated
+      ? `${getMenuItem(customer.orderId).name} 주문이 접수되어 셰프가 조리를 시작합니다.`
+      : `${getMenuItem(customer.orderId).name} 주문을 받았습니다. 해당 조리대에서 직접 조리를 시작하세요.`);
     return true;
   }
 
@@ -1496,7 +1505,48 @@ export class GameScene extends Phaser.Scene {
         action: () => this.pickUpFood(nearestStation),
       };
     }
+
+    if (!this.isPlayerCooking()) {
+      let nearestPlayerStation: CookingStation | undefined;
+      nearestDistanceSquared = 39 * 39;
+      for (const station of this.stations.values()) {
+        if (!station.hasPendingPlayerTicket()) continue;
+        const distanceX = station.x - this.player.x;
+        const distanceY = station.y - this.player.y;
+        const distanceSquared = distanceX * distanceX + distanceY * distanceY;
+        if (distanceSquared <= nearestDistanceSquared) {
+          nearestDistanceSquared = distanceSquared;
+          nearestPlayerStation = station;
+        }
+      }
+      if (nearestPlayerStation !== undefined) {
+        const menuName = getMenuItem(nearestPlayerStation.menuItemId).name;
+        return {
+          x: nearestPlayerStation.x,
+          y: nearestPlayerStation.y,
+          label: `${menuName} 조리하기`,
+          action: () => this.startPlayerCooking(nearestPlayerStation),
+        };
+      }
+    }
     return undefined;
+  }
+
+  private isPlayerCooking(): boolean {
+    for (const station of this.stations.values()) {
+      if (station.hasPlayerCookingCommitment()) return true;
+    }
+    return false;
+  }
+
+  private startPlayerCooking(station: CookingStation): void {
+    if (this.isPlayerCooking()) return;
+    const ticket = station.startNextPlayerTicket();
+    if (ticket === undefined) return;
+    const menuName = getMenuItem(ticket.menuItemId).name;
+    this.sfx.click();
+    this.toast.show(`${menuName} 직접 조리 시작!`, "success");
+    setStatus(`${menuName}을 만들고 있습니다. 셰프의 다른 메뉴와 동시에 조리됩니다.`);
   }
 
   private findNearestCustomer(
@@ -2025,7 +2075,7 @@ export class GameScene extends Phaser.Scene {
     const title = this.add.text(240, 49, "메뉴별 조리대 확장", {
       fontFamily: UI_FONT, fontStyle: "bold", fontSize: "14px", color: "#fff0bd",
     }).setOrigin(0.5);
-    const hint = this.add.text(240, 67, "조리대 슬롯과 셰프가 모두 있어야 동시 조리돼요", {
+    const hint = this.add.text(240, 67, "셰프 자동 조리와 사장님 직접 조리는 별도 슬롯이에요", {
       fontFamily: UI_FONT, fontSize: "7px", color: "#9eabc8",
     }).setOrigin(0.5);
     const items: Phaser.GameObjects.GameObject[] = [shade, panel, title, hint];
@@ -2332,7 +2382,7 @@ export class GameScene extends Phaser.Scene {
     const titles = ["", "주문부터 계산까지", "포차를 키워보세요!", "직원과 피버를 활용해요"];
     const bodies = [
       "",
-      "주문받기 → 조리대에서 음식 들기 → 서빙하기\n손님이 남긴 동전은 가까이 가면 수거돼요.",
+      "주문받기 → 해당 조리대에서 직접 조리하기\n완성 음식 들기 → 서빙 → 동전 수거 순서예요.",
       "오른쪽에서 단계별 확장을 구매하세요.\n표시 가격이 그대로 정산되고 포차가 성장해요!",
       "셰프와 서버는 각자 한 작업씩 맡아요.\nFEVER 게이지와 메뉴 홍보로 러시를 돌파하세요!",
     ];

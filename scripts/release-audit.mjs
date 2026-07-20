@@ -60,6 +60,9 @@ assert.match(atmosphere, /atmosphereUpdateIntervalMs/u, "atmosphere updates must
 assert.match(main, /"low-power"/u, "touch devices must request a low-power GPU profile");
 const gameScene = read("src/game/scenes/GameScene.ts");
 assert.match(gameScene, /paymentPool/u, "payment sprites must be pooled instead of recreated");
+assert.match(gameScene, /startPlayerCooking/u, "the owner must be able to start cooking at a worktop");
+assert.match(gameScene, /cookingAgent: automated \? "chef" : "player"/u, "manual orders must wait for direct player cooking");
+assert.match(read("src/game/entities/CookingStation.ts"), /hasPendingPlayerTicket/u, "worktops must expose player-owned cooking tickets");
 assert.doesNotMatch(read("src/game/entities/Player.ts"), /new Phaser\.Math\.Vector2/u, "player input must not allocate vectors every frame");
 assert.match(read("src/game/systems/ProgressionSystem.ts"), /NO_FEVER_TRANSITION/u, "idle fever updates must avoid state allocations");
 assert.match(read("src/game/scenes/GameScene.ts"), /지금 저장/u, "the pause menu must expose manual save");

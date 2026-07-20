@@ -8,6 +8,9 @@ export interface CookingTicket {
   readonly quantity: number;
   readonly cookingTimeMs?: number;
   readonly chefWorkerId?: string;
+  /** Player tickets wait at the worktop until the owner explicitly starts them. */
+  readonly cookingAgent?: "chef" | "player";
+  readonly playerStarted?: boolean;
 }
 
 export type FoodReadyCallback = (station: CookingStation, ticket: CookingTicket) => void;
@@ -227,6 +230,33 @@ export class CookingStation {
     return this.queue.length + this.activeSlots.length;
   }
 
+  public hasPendingPlayerTicket(): boolean {
+    return this.queue.some(
+      (ticket) => ticket.cookingAgent === "player" && ticket.playerStarted !== true,
+    );
+  }
+
+  public startNextPlayerTicket(): CookingTicket | undefined {
+    const queueIndex = this.queue.findIndex(
+      (ticket) => ticket.cookingAgent === "player" && ticket.playerStarted !== true,
+    );
+    const ticket = this.queue[queueIndex];
+    if (queueIndex < 0 || ticket === undefined) return undefined;
+
+    const startedTicket: CookingTicket = { ...ticket, playerStarted: true };
+    this.queue[queueIndex] = startedTicket;
+    this.scene.tweens.add({
+      targets: this.sprite,
+      scaleX: 1.08,
+      scaleY: 1.08,
+      duration: 110,
+      yoyo: true,
+      ease: "Sine.Out",
+    });
+    this.startAvailableTickets();
+    return startedTicket;
+  }
+
   public reassignTicketCustomer(
     fromCustomerId: string,
     toCustomerId: string,
@@ -334,6 +364,24 @@ export class CookingStation {
 
   public getActiveCount(): number {
     return this.activeSlots.length;
+  }
+
+  public getActiveChefCount(): number {
+    let count = 0;
+    for (const slot of this.activeSlots) {
+      if (slot.ticket.cookingAgent !== "player") count += 1;
+    }
+    return count;
+  }
+
+  public hasActivePlayerCooking(): boolean {
+    return this.activeSlots.some((slot) => slot.ticket.cookingAgent === "player");
+  }
+
+  public hasPlayerCookingCommitment(): boolean {
+    return this.hasActivePlayerCooking() || this.queue.some(
+      (ticket) => ticket.cookingAgent === "player" && ticket.playerStarted === true,
+    );
   }
 
   public getEstimatedQueueDelayMs(): number {

@@ -140,6 +140,38 @@ assert.equal(
   false,
   "the kitchen-wide cooking-slot cap must be enforced",
 );
+const waitingPlayerTicket = {
+  customerId: "owner-a",
+  menuItemId: "fishcake" as const,
+  quantity: 1,
+  cookingAgent: "player" as const,
+  playerStarted: false,
+};
+const startedPlayerTicket = { ...waitingPlayerTicket, playerStarted: true };
+assert.equal(
+  canStartCookingTicket(waitingPlayerTicket, [chefOneTicket], 1),
+  false,
+  "a player order must wait until the owner interacts with its worktop",
+);
+assert.equal(
+  canStartCookingTicket(startedPlayerTicket, [chefOneTicket], 1),
+  true,
+  "the owner must cook fishcake while a chef uses the only chef slot for tteokbokki",
+);
+assert.equal(
+  canStartCookingTicket(
+    { ...startedPlayerTicket, customerId: "owner-b" },
+    [chefOneTicket, startedPlayerTicket],
+    1,
+  ),
+  false,
+  "the owner can personally cook only one serving at a time",
+);
+assert.equal(
+  canStartCookingTicket(chefOneTicket, [startedPlayerTicket], 1),
+  true,
+  "player cooking must not consume a hired-chef cooking slot",
+);
 assert.equal(getStageConfig(6).targetDurationSeconds, 204);
 assert.equal(getStageConfig(11).targetDurationSeconds, 336);
 assert.equal(getStageConfig(30).targetDurationSeconds, 2_520);
