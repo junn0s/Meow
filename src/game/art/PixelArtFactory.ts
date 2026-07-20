@@ -160,6 +160,123 @@ function multiplyColor(color: number, tint: number): number {
   return (red << 16) | (green << 8) | blue;
 }
 
+function drawThemedAvatarDetails(
+  graphics: Graphics,
+  direction: Direction,
+  frame: number,
+  look: AvatarLook,
+  muzzleColor: number,
+  chapterId: Exclude<ChapterId, 1>,
+): void {
+  const bob = frame === 1 ? 1 : 0;
+  const front = direction === "down";
+  const side = direction === "left" || direction === "right";
+  const leftSide = direction === "left";
+  const palettes = {
+    2: { primary: 0x54d6cf, secondary: 0xff776d, light: 0xffd58a, dark: 0x3f3045 },
+    3: { primary: 0x4f9b7b, secondary: 0xa9413c, light: 0xf2d49b, dark: 0x35272b },
+    4: { primary: 0x7d2948, secondary: 0xe3b75d, light: 0xf1e8dc, dark: 0x241f2c },
+    5: { primary: 0x294d78, secondary: 0xc55442, light: 0xfff3d7, dark: 0x202737 },
+  } as const;
+  const c = palettes[chapterId];
+
+  if (look.apron !== "apron-none" && direction !== "up") {
+    const variant = look.apron === "apron-red" ? c.secondary
+      : look.apron === "apron-mint" ? c.primary
+        : look.apron === "apron-night" ? c.dark : c.light;
+    if (chapterId === 2) {
+      rect(graphics, c.dark, side ? 11 : 9, 17 + bob, side ? 12 : 14, 9);
+      rect(graphics, variant, side ? 12 : 10, 18 + bob, side ? 10 : 12, 7);
+      rect(graphics, c.light, side ? 14 : 12, 19 + bob, 3, 2);
+      rect(graphics, c.primary, side ? 18 : 18, 21 + bob, 3, 3);
+      if (!side) { rect(graphics, c.secondary, 9, 24 + bob, 14, 2); rect(graphics, c.light, 12, 18 + bob, 2, 7); }
+    } else if (chapterId === 3) {
+      rect(graphics, c.dark, side ? 10 : 7, 17 + bob, side ? 13 : 18, 9);
+      rect(graphics, variant, side ? 11 : 8, 18 + bob, side ? 11 : 16, 7);
+      if (!side) { rect(graphics, c.secondary, 14, 18 + bob, 4, 8); rect(graphics, c.light, 9, 21 + bob, 14, 2); }
+      else rect(graphics, c.secondary, 15, 18 + bob, 3, 8);
+    } else if (chapterId === 4) {
+      rect(graphics, c.dark, side ? 11 : 9, 17 + bob, side ? 12 : 14, 9);
+      rect(graphics, variant, side ? 12 : 10, 18 + bob, side ? 10 : 12, 7);
+      rect(graphics, c.light, side ? 15 : 14, 18 + bob, 4, 6);
+      rect(graphics, c.secondary, side ? 16 : 15, 19 + bob, 2, 2);
+      if (!side) { rect(graphics, c.dark, 10, 24 + bob, 12, 2); rect(graphics, c.secondary, 11, 18 + bob, 2, 6); }
+    } else {
+      rect(graphics, c.dark, side ? 10 : 8, 17 + bob, side ? 13 : 16, 9);
+      rect(graphics, variant, side ? 11 : 9, 18 + bob, side ? 11 : 14, 7);
+      rect(graphics, c.light, side ? 14 : 12, 19 + bob, 7, 2);
+      if (!side) { rect(graphics, c.primary, 9, 23 + bob, 14, 3); rect(graphics, c.secondary, 15, 18 + bob, 3, 8); }
+    }
+  }
+
+  if (front) {
+    rect(graphics, muzzleColor, 10, 10 + bob, 12, 4);
+    if (look.eyes === "eyes-sleepy") {
+      rect(graphics, c.dark, 11, 12 + bob, 3, 1); rect(graphics, c.dark, 18, 12 + bob, 3, 1);
+    } else if (look.eyes === "eyes-sparkle") {
+      rect(graphics, c.primary, 11, 10 + bob, 3, 3); rect(graphics, c.primary, 18, 10 + bob, 3, 3);
+      rect(graphics, 0xffffff, 11, 10 + bob, 1, 1); rect(graphics, 0xffffff, 18, 10 + bob, 1, 1);
+      if (chapterId === 5) { rect(graphics, 0x5ed5df, 10, 9 + bob, 1, 1); rect(graphics, 0x5ed5df, 21, 9 + bob, 1, 1); }
+    } else if (look.eyes === "eyes-heart") {
+      rect(graphics, c.secondary, 11, 10 + bob, 3, 2); rect(graphics, c.secondary, 12, 12 + bob, 1, 1);
+      rect(graphics, c.secondary, 18, 10 + bob, 3, 2); rect(graphics, c.secondary, 19, 12 + bob, 1, 1);
+    } else {
+      rect(graphics, c.dark, 11, 11 + bob, 2, 2); rect(graphics, c.dark, 19, 11 + bob, 2, 2);
+    }
+  }
+
+  if (look.hat === "hat-band") {
+    rect(graphics, c.dark, 7, 7 + bob, 18, 3); rect(graphics, c.secondary, 8, 7 + bob, 16, 2);
+    if (chapterId === 2) { rect(graphics, 0xffe4e8, leftSide ? 6 : 22, 5 + bob, 5, 3); rect(graphics, c.light, leftSide ? 8 : 24, 6 + bob, 1, 1); }
+    else if (chapterId === 3) { rect(graphics, c.secondary, leftSide ? 23 : 5, 8 + bob, 5, 4); rect(graphics, c.light, leftSide ? 24 : 6, 9 + bob, 3, 1); }
+    else if (chapterId === 4) { rect(graphics, c.primary, 9, 5 + bob, 14, 3); rect(graphics, c.secondary, 14, 5 + bob, 4, 3); }
+    else { rect(graphics, c.light, leftSide ? 23 : 5, 8 + bob, 5, 4); rect(graphics, c.secondary, leftSide ? 24 : 6, 9 + bob, 3, 2); }
+  } else if (look.hat === "hat-chef") {
+    if (chapterId === 2) {
+      rect(graphics, c.dark, 7, 4 + bob, 20, 6); rect(graphics, c.light, 9, 3 + bob, 14, 5); rect(graphics, c.secondary, 7, 8 + bob, 20, 2); rect(graphics, c.primary, 20, 4 + bob, 3, 3);
+    } else if (chapterId === 3) {
+      rect(graphics, c.dark, 8, 3 + bob, 16, 7); rect(graphics, c.light, 10, 4 + bob, 12, 5); rect(graphics, c.secondary, 12, 2 + bob, 8, 3); rect(graphics, c.primary, 14, 5 + bob, 4, 3);
+    } else if (chapterId === 4) {
+      rect(graphics, c.dark, 9, 2 + bob, 14, 8); rect(graphics, c.light, 10, 3 + bob, 12, 6); rect(graphics, c.light, 7, 4 + bob, 5, 4); rect(graphics, c.light, 20, 4 + bob, 5, 4); rect(graphics, c.primary, 10, 8 + bob, 12, 2);
+    } else {
+      rect(graphics, c.dark, 8, 4 + bob, 16, 6); rect(graphics, c.light, 10, 3 + bob, 12, 5); rect(graphics, c.primary, 10, 7 + bob, 12, 3); rect(graphics, c.secondary, 15, 4 + bob, 3, 3);
+    }
+  } else if (look.hat === "hat-moon") {
+    if (chapterId === 2) {
+      rect(graphics, c.dark, 8, 4 + bob, 16, 6); rect(graphics, c.primary, 9, 5 + bob, 14, 4); rect(graphics, 0x69b85a, 19, 1 + bob, 3, 5); rect(graphics, 0x69b85a, 22, 2 + bob, 4, 2);
+    } else if (chapterId === 3) {
+      rect(graphics, c.dark, 8, 3 + bob, 16, 5); rect(graphics, c.dark, 5, 8 + bob, 22, 2); rect(graphics, c.primary, 13, 4 + bob, 6, 4);
+    } else if (chapterId === 4) {
+      graphics.fillStyle(c.dark, 1).fillCircle(16, 6 + bob, 8); rect(graphics, c.primary, 7, 6 + bob, 18, 4); rect(graphics, c.secondary, 14, 5 + bob, 4, 3);
+    } else {
+      rect(graphics, c.dark, 7, 4 + bob, 18, 6); rect(graphics, c.primary, 8, 5 + bob, 16, 4); graphics.fillStyle(c.primary, 1).fillTriangle(8, 8 + bob, 4, 4 + bob, 9, 3 + bob); rect(graphics, c.light, 17, 6 + bob, 4, 2);
+    }
+  } else if (look.hat === "hat-flower") {
+    const x = leftSide ? 7 : 20;
+    if (chapterId === 2) { rect(graphics, 0xfff0f2, x, 5 + bob, 5, 3); rect(graphics, c.secondary, x + 1, 4 + bob, 3, 5); rect(graphics, c.light, x + 2, 6 + bob, 1, 1); }
+    else if (chapterId === 3) { rect(graphics, c.light, x, 4 + bob, 2, 8); rect(graphics, c.secondary, x - 2, 5 + bob, 5, 3); rect(graphics, c.primary, x - 1, 4 + bob, 3, 5); }
+    else if (chapterId === 4) { rect(graphics, c.primary, x - 1, 4 + bob, 6, 6); rect(graphics, c.secondary, x, 5 + bob, 4, 4); rect(graphics, c.light, x + 1, 6 + bob, 2, 2); }
+    else { rect(graphics, c.light, x, 3 + bob, 2, 9); rect(graphics, 0xffb1c2, x - 2, 5 + bob, 6, 3); rect(graphics, c.secondary, x, 4 + bob, 3, 5); }
+  }
+
+  if (look.accessory !== "acc-none" && direction !== "up") {
+    if (look.accessory === "acc-scarf") {
+      rect(graphics, c.dark, side ? 11 : 9, 16 + bob, side ? 12 : 14, 3); rect(graphics, c.secondary, side ? 12 : 10, 17 + bob, side ? 10 : 12, 2);
+      if (chapterId === 2) graphics.fillStyle(c.secondary, 1).fillTriangle(side ? 18 : 20, 19 + bob, side ? 23 : 24, 26 + bob, side ? 16 : 17, 25 + bob);
+      else if (chapterId === 3) { rect(graphics, c.secondary, leftSide ? 20 : 18, 19 + bob, 3, 6); rect(graphics, c.light, leftSide ? 20 : 18, 22 + bob, 3, 2); }
+      else if (chapterId === 4) { rect(graphics, c.primary, leftSide ? 20 : 18, 19 + bob, 3, 6); rect(graphics, c.secondary, leftSide ? 20 : 18, 23 + bob, 3, 2); }
+      else { rect(graphics, 0xffb1c2, leftSide ? 20 : 18, 19 + bob, 3, 6); rect(graphics, c.light, leftSide ? 20 : 18, 23 + bob, 3, 2); }
+    } else {
+      const x = side ? 13 : 15;
+      if (chapterId === 2 && look.accessory === "acc-fish") { rect(graphics, 0x69b85a, x, 17 + bob, 5, 6); rect(graphics, c.light, x + 1, 16 + bob, 3, 3); }
+      else if (chapterId === 3 && look.accessory === "acc-fish") { rect(graphics, c.light, x, 17 + bob, 2, 7); graphics.fillStyle(c.light, 1).fillCircle(x + 3, 17 + bob, 2); }
+      else if (chapterId === 4 && look.accessory === "acc-fish") { rect(graphics, c.dark, x, 17 + bob, 5, 5); rect(graphics, c.light, x + 1, 18 + bob, 3, 3); }
+      else if (chapterId === 5 && look.accessory === "acc-fish") { rect(graphics, c.secondary, x - 1, 18 + bob, 7, 3); graphics.fillStyle(c.secondary, 1).fillTriangle(x + 5, 16 + bob, x + 8, 19 + bob, x + 5, 22 + bob); }
+      else { rect(graphics, c.dark, x, 17 + bob, 5, 5); rect(graphics, look.accessory === "acc-bell" ? c.secondary : c.primary, x + 1, 18 + bob, 3, 3); }
+    }
+  }
+}
+
 function drawAvatarDetails(
   graphics: Graphics,
   direction: Direction,
@@ -168,6 +285,10 @@ function drawAvatarDetails(
   muzzleColor: number,
   chapterId: ChapterId,
 ): void {
+  if (chapterId !== 1) {
+    drawThemedAvatarDetails(graphics, direction, frame, look, muzzleColor, chapterId);
+    return;
+  }
   const chapter = getChapter(chapterId);
   const bob = frame === 1 ? 1 : 0;
   const front = direction === "down";
@@ -897,11 +1018,172 @@ const FACILITY_TEXTURE_IDS: readonly FacilityUpgradeId[] = [
   "chef-uniform", "server-uniform", "staff-badge", "server-shoes",
 ];
 
+function drawBeachFacility(graphics: Graphics, id: FacilityUpgradeId): void {
+  const p = PIXEL_PALETTE;
+  const ink = 0x3f3045;
+  const coral = 0xff776d;
+  const aqua = 0x54d6cf;
+  const bamboo = 0xb9824d;
+  const sand = 0xffd58a;
+  switch (id) {
+    case "copper-pot":
+      rect(graphics, ink, 8, 7, 16, 17); rect(graphics, aqua, 10, 9, 12, 12); rect(graphics, p.warmWhite, 12, 10, 8, 3);
+      rect(graphics, ink, 13, 3, 6, 5); rect(graphics, coral, 14, 4, 4, 3); rect(graphics, sand, 20, 5, 7, 2); break;
+    case "double-burner":
+      rect(graphics, ink, 3, 9, 26, 14); rect(graphics, bamboo, 5, 11, 22, 10);
+      rect(graphics, aqua, 7, 6, 7, 12); rect(graphics, coral, 18, 5, 7, 13); rect(graphics, p.warmWhite, 8, 8, 5, 3); rect(graphics, p.warmWhite, 19, 7, 5, 3); break;
+    case "prep-rack":
+      rect(graphics, ink, 3, 8, 26, 15); rect(graphics, bamboo, 5, 10, 22, 11); rect(graphics, aqua, 6, 7, 20, 4);
+      rect(graphics, coral, 7, 13, 5, 5); rect(graphics, sand, 14, 13, 5, 5); rect(graphics, 0x69b85a, 21, 12, 4, 6); break;
+    case "steam-hood":
+      rect(graphics, ink, 5, 4, 22, 4); graphics.fillStyle(aqua, 1).fillTriangle(4, 8, 28, 8, 23, 17);
+      rect(graphics, p.warmWhite, 9, 10, 14, 3); rect(graphics, coral, 15, 17, 3, 6); break;
+    case "soft-chair":
+      rect(graphics, ink, 7, 6, 18, 17); graphics.lineStyle(3, bamboo, 1).strokeRoundedRect(9, 8, 14, 11, 5);
+      rect(graphics, coral, 10, 12, 12, 8); rect(graphics, sand, 12, 14, 8, 4); break;
+    case "wide-table":
+      rect(graphics, ink, 2, 10, 28, 5); rect(graphics, bamboo, 4, 8, 24, 5); rect(graphics, aqua, 7, 6, 5, 4); rect(graphics, coral, 20, 5, 5, 5);
+      rect(graphics, bamboo, 7, 15, 3, 10); rect(graphics, bamboo, 22, 15, 3, 10); break;
+    case "moon-counter":
+      rect(graphics, ink, 2, 8, 28, 17); rect(graphics, sand, 4, 10, 24, 13); rect(graphics, aqua, 4, 10, 24, 3);
+      graphics.lineStyle(2, coral, 1).strokeCircle(16, 18, 5); rect(graphics, p.warmWhite, 14, 16, 4, 4); break;
+    case "tea-dispenser":
+      graphics.fillStyle(ink, 1).fillCircle(16, 14, 11); graphics.fillStyle(0x72bd58, 1).fillCircle(16, 14, 9);
+      rect(graphics, p.warmWhite, 10, 8, 12, 4); rect(graphics, ink, 22, 13, 6, 3); rect(graphics, aqua, 14, 22, 4, 4); break;
+    case "paper-lantern":
+      rect(graphics, ink, 14, 2, 4, 4); rect(graphics, bamboo, 8, 6, 16, 18); rect(graphics, coral, 10, 8, 12, 14);
+      rect(graphics, sand, 12, 10, 8, 3); rect(graphics, aqua, 14, 14, 4, 6); break;
+    case "blue-canopy":
+      rect(graphics, ink, 2, 5, 28, 4); rect(graphics, 0x69b85a, 3, 6, 26, 3);
+      for (let x = 4; x < 29; x += 6) graphics.fillStyle(x % 12 === 4 ? 0x69b85a : 0x3d924f, 1).fillTriangle(x, 9, x + 6, 9, x + 3, 17);
+      rect(graphics, bamboo, 4, 16, 3, 10); rect(graphics, bamboo, 25, 16, 3, 10); break;
+    case "neon-set":
+      graphics.lineStyle(3, aqua, 1).strokeRoundedRect(3, 5, 26, 18, 5); graphics.lineStyle(2, coral, 1).lineBetween(8, 16, 12, 12).lineBetween(12, 12, 16, 10).lineBetween(16, 10, 20, 12).lineBetween(20, 12, 24, 16);
+      rect(graphics, sand, 8, 10, 3, 9); rect(graphics, sand, 21, 10, 3, 9); break;
+    case "moon-sign":
+      rect(graphics, ink, 3, 5, 26, 19); rect(graphics, 0x2585a6, 5, 7, 22, 15); graphics.fillStyle(p.warmWhite, 1).fillTriangle(7, 18, 16, 8, 25, 18);
+      rect(graphics, sand, 9, 18, 14, 2); rect(graphics, coral, 14, 12, 4, 4); break;
+    case "wind-chime":
+      rect(graphics, ink, 5, 5, 22, 3); rect(graphics, bamboo, 7, 7, 18, 3);
+      for (let x = 9; x <= 21; x += 6) { rect(graphics, aqua, x, 10, 2, 9); rect(graphics, p.warmWhite, x - 1, 18, 4, 3); }
+      rect(graphics, coral, 14, 21, 5, 5); break;
+    case "lucky-cat":
+      rect(graphics, ink, 7, 11, 18, 13); rect(graphics, sand, 9, 13, 14, 9); rect(graphics, 0x69b85a, 12, 7, 8, 7);
+      rect(graphics, coral, 14, 5, 4, 4); rect(graphics, aqua, 11, 16, 10, 3); break;
+    case "festival-drum":
+      graphics.fillStyle(ink, 1).fillCircle(16, 16, 11); graphics.fillStyle(coral, 1).fillCircle(16, 16, 8); rect(graphics, sand, 12, 7, 8, 18);
+      rect(graphics, aqua, 14, 10, 4, 12); rect(graphics, bamboo, 3, 3, 3, 13); break;
+    case "night-ledger":
+      rect(graphics, ink, 5, 4, 22, 21); rect(graphics, aqua, 7, 6, 18, 17); rect(graphics, coral, 8, 7, 4, 15);
+      rect(graphics, p.warmWhite, 14, 9, 8, 2); rect(graphics, sand, 14, 14, 6, 2); rect(graphics, 0x69b85a, 18, 18, 5, 3); break;
+    case "coupon-board":
+      rect(graphics, ink, 3, 4, 26, 20); rect(graphics, bamboo, 5, 6, 22, 16); rect(graphics, p.charcoal, 7, 8, 18, 12);
+      rect(graphics, coral, 9, 10, 5, 3); rect(graphics, aqua, 17, 10, 6, 3); rect(graphics, sand, 11, 16, 10, 2); break;
+    case "chef-uniform":
+      rect(graphics, ink, 7, 7, 18, 17); rect(graphics, p.warmWhite, 9, 9, 14, 13); rect(graphics, 0x69b85a, 11, 10, 3, 3);
+      rect(graphics, coral, 16, 10, 3, 3); rect(graphics, aqua, 19, 15, 3, 5); rect(graphics, ink, 4, 9, 6, 5); rect(graphics, ink, 22, 9, 6, 5); break;
+    case "server-uniform":
+      rect(graphics, ink, 7, 7, 18, 17); rect(graphics, coral, 9, 9, 14, 13); rect(graphics, p.warmWhite, 11, 11, 10, 2);
+      rect(graphics, aqua, 15, 15, 3, 6); rect(graphics, sand, 5, 8, 5, 5); rect(graphics, sand, 22, 8, 5, 5); break;
+    case "staff-badge":
+      rect(graphics, ink, 8, 3, 16, 22); rect(graphics, aqua, 10, 5, 12, 17); graphics.fillStyle(sand, 1).fillCircle(16, 11, 5);
+      rect(graphics, 0x69b85a, 14, 8, 4, 7); rect(graphics, coral, 12, 20, 8, 4); break;
+    case "server-shoes":
+      rect(graphics, ink, 2, 12, 13, 11); rect(graphics, coral, 4, 10, 8, 10); rect(graphics, p.warmWhite, 3, 20, 13, 3);
+      rect(graphics, ink, 17, 10, 13, 13); rect(graphics, aqua, 20, 8, 7, 12); rect(graphics, p.warmWhite, 17, 20, 13, 3); break;
+  }
+}
+
+function drawHanokFacility(graphics: Graphics, id: FacilityUpgradeId): void {
+  const p = PIXEL_PALETTE; const ink = 0x35272b; const jade = 0x4f9b7b; const red = 0xa9413c; const brass = 0xd7a84f; const wood = 0x8a5838;
+  switch (id) {
+    case "copper-pot": rect(graphics, ink, 5, 11, 22, 12); graphics.fillStyle(0x33383d, 1).fillEllipse(7, 8, 18, 8); rect(graphics, brass, 8, 13, 16, 3); rect(graphics, red, 12, 23, 8, 3); break;
+    case "double-burner": rect(graphics, ink, 2, 11, 28, 13); rect(graphics, wood, 4, 13, 24, 9); graphics.lineStyle(2, red, 1).strokeCircle(10, 17, 5).strokeCircle(22, 17, 5); rect(graphics, brass, 8, 16, 4, 2); rect(graphics, brass, 20, 16, 4, 2); break;
+    case "prep-rack": rect(graphics, ink, 3, 8, 26, 16); rect(graphics, wood, 5, 10, 22, 12); rect(graphics, p.cream, 7, 12, 5, 6); rect(graphics, jade, 14, 12, 5, 6); rect(graphics, red, 21, 12, 4, 6); rect(graphics, brass, 5, 8, 22, 3); break;
+    case "steam-hood": rect(graphics, ink, 4, 5, 24, 4); rect(graphics, 0x4b555b, 6, 6, 20, 2); graphics.fillStyle(0x6d7778, 1).fillTriangle(4, 9, 28, 9, 23, 18); rect(graphics, jade, 10, 12, 12, 2); break;
+    case "soft-chair": rect(graphics, ink, 6, 13, 20, 10); rect(graphics, red, 8, 12, 16, 9); rect(graphics, brass, 10, 14, 12, 5); rect(graphics, jade, 14, 15, 4, 3); break;
+    case "wide-table": graphics.fillStyle(ink, 1).fillEllipse(3, 7, 26, 12); graphics.fillStyle(wood, 1).fillEllipse(5, 8, 22, 8); rect(graphics, ink, 13, 16, 6, 9); rect(graphics, brass, 9, 10, 5, 3); rect(graphics, jade, 18, 9, 5, 3); break;
+    case "moon-counter": rect(graphics, ink, 2, 8, 28, 17); rect(graphics, wood, 4, 10, 24, 13); rect(graphics, brass, 4, 10, 24, 3); for (let x = 7; x < 26; x += 6) { rect(graphics, jade, x, 15, 2, 6); rect(graphics, red, x + 2, 15, 2, 6); } break;
+    case "tea-dispenser": rect(graphics, ink, 9, 5, 14, 20); rect(graphics, brass, 11, 7, 10, 15); rect(graphics, red, 13, 9, 6, 3); rect(graphics, ink, 22, 12, 6, 3); rect(graphics, jade, 14, 22, 4, 3); break;
+    case "paper-lantern": rect(graphics, ink, 14, 2, 4, 4); graphics.fillStyle(red, 1).fillCircle(16, 14, 10); rect(graphics, p.warmWhite, 11, 9, 10, 3); rect(graphics, brass, 13, 14, 6, 5); rect(graphics, jade, 14, 23, 4, 4); break;
+    case "blue-canopy": rect(graphics, ink, 2, 6, 28, 4); rect(graphics, 0x46545a, 4, 4, 24, 4); for (let x = 4; x < 28; x += 6) graphics.fillStyle(x % 12 === 4 ? jade : red, 1).fillTriangle(x, 10, x + 6, 10, x + 3, 17); rect(graphics, wood, 4, 16, 3, 10); rect(graphics, wood, 25, 16, 3, 10); break;
+    case "neon-set": rect(graphics, ink, 3, 4, 26, 20); rect(graphics, 0x263a3c, 5, 6, 22, 16); for (let x = 8; x <= 22; x += 7) { rect(graphics, jade, x, 7, 2, 14); rect(graphics, red, 6, x - 1, 20, 2); } break;
+    case "moon-sign": graphics.fillStyle(ink, 1).fillTriangle(2, 10, 16, 3, 30, 10); rect(graphics, wood, 5, 9, 22, 14); rect(graphics, brass, 8, 12, 16, 2); rect(graphics, p.cream, 11, 16, 10, 3); rect(graphics, jade, 15, 20, 3, 4); break;
+    case "wind-chime": rect(graphics, wood, 7, 4, 18, 3); rect(graphics, jade, 9, 7, 2, 12); rect(graphics, brass, 15, 7, 2, 15); rect(graphics, red, 21, 7, 2, 12); rect(graphics, p.warmWhite, 7, 18, 6, 4); rect(graphics, p.warmWhite, 19, 18, 6, 4); break;
+    case "lucky-cat": rect(graphics, ink, 8, 8, 17, 16); rect(graphics, p.cream, 10, 10, 13, 12); rect(graphics, red, 11, 18, 11, 4); rect(graphics, jade, 14, 6, 5, 5); rect(graphics, brass, 14, 18, 5, 4); rect(graphics, ink, 23, 5, 4, 12); break;
+    case "festival-drum": graphics.fillStyle(ink, 1).fillEllipse(5, 7, 22, 17); graphics.fillStyle(red, 1).fillEllipse(7, 9, 18, 13); rect(graphics, brass, 8, 14, 16, 2); rect(graphics, jade, 14, 9, 4, 12); rect(graphics, wood, 3, 2, 3, 12); break;
+    case "night-ledger": rect(graphics, ink, 5, 3, 22, 23); rect(graphics, p.cream, 7, 5, 18, 19); rect(graphics, red, 7, 5, 4, 19); rect(graphics, ink, 13, 9, 9, 1); rect(graphics, ink, 13, 13, 7, 1); rect(graphics, jade, 16, 17, 6, 4); break;
+    case "coupon-board": rect(graphics, ink, 3, 3, 26, 22); rect(graphics, wood, 5, 5, 22, 18); for (let x = 7; x < 25; x += 6) { rect(graphics, p.cream, x, 7, 4, 13); rect(graphics, x % 12 === 7 ? red : jade, x + 1, 9, 2, 7); } break;
+    case "chef-uniform": rect(graphics, ink, 7, 7, 18, 17); rect(graphics, p.cream, 9, 9, 14, 13); rect(graphics, red, 14, 9, 4, 13); rect(graphics, brass, 10, 12, 3, 3); rect(graphics, ink, 3, 9, 7, 6); rect(graphics, ink, 22, 9, 7, 6); break;
+    case "server-uniform": rect(graphics, ink, 5, 8, 22, 16); rect(graphics, jade, 7, 10, 18, 12); rect(graphics, red, 13, 8, 6, 15); graphics.fillStyle(jade, 1).fillTriangle(5, 13, 1, 20, 8, 20); graphics.fillStyle(jade, 1).fillTriangle(27, 13, 31, 20, 24, 20); break;
+    case "staff-badge": rect(graphics, red, 8, 3, 16, 5); rect(graphics, ink, 7, 7, 18, 17); rect(graphics, brass, 9, 9, 14, 13); rect(graphics, jade, 12, 12, 8, 6); rect(graphics, p.warmWhite, 15, 10, 2, 11); break;
+    case "server-shoes": rect(graphics, ink, 2, 12, 13, 11); rect(graphics, p.charcoal, 4, 10, 9, 10); rect(graphics, p.warmWhite, 3, 20, 13, 3); rect(graphics, ink, 17, 12, 13, 11); rect(graphics, red, 19, 10, 9, 10); rect(graphics, p.warmWhite, 17, 20, 13, 3); break;
+  }
+}
+
+function drawDiningFacility(graphics: Graphics, id: FacilityUpgradeId): void {
+  const p = PIXEL_PALETTE; const ink = 0x241f2c; const wine = 0x7d2948; const gold = 0xe3b75d; const marble = 0xf1e8dc; const brass = 0xa87335;
+  switch (id) {
+    case "copper-pot": rect(graphics, ink, 5, 10, 22, 12); rect(graphics, 0xc47b45, 7, 11, 18, 9); rect(graphics, gold, 9, 12, 14, 2); rect(graphics, ink, 2, 13, 5, 3); rect(graphics, ink, 25, 13, 5, 3); rect(graphics, marble, 12, 7, 8, 3); break;
+    case "double-burner": rect(graphics, ink, 2, 9, 28, 15); rect(graphics, 0x62616b, 4, 11, 24, 11); graphics.lineStyle(2, gold, 1).strokeCircle(10, 16, 5).strokeCircle(22, 16, 5); rect(graphics, wine, 6, 21, 20, 2); break;
+    case "prep-rack": rect(graphics, ink, 2, 8, 28, 15); rect(graphics, marble, 4, 9, 24, 5); rect(graphics, brass, 5, 14, 3, 9); rect(graphics, brass, 24, 14, 3, 9); rect(graphics, wine, 8, 16, 5, 5); rect(graphics, gold, 15, 16, 5, 5); rect(graphics, 0x598c62, 22, 15, 4, 6); break;
+    case "steam-hood": rect(graphics, ink, 5, 3, 22, 5); rect(graphics, brass, 7, 4, 18, 3); graphics.fillStyle(0xb18a5d, 1).fillTriangle(3, 8, 29, 8, 25, 18); rect(graphics, marble, 8, 10, 16, 3); rect(graphics, gold, 14, 16, 4, 3); break;
+    case "soft-chair": rect(graphics, ink, 7, 4, 18, 19); graphics.lineStyle(3, gold, 1).strokeRoundedRect(9, 6, 14, 14, 4); rect(graphics, wine, 10, 8, 12, 12); rect(graphics, gold, 14, 10, 4, 7); break;
+    case "wide-table": rect(graphics, ink, 2, 10, 28, 7); rect(graphics, 0x5d342e, 4, 11, 24, 4); rect(graphics, marble, 11, 7, 10, 4); rect(graphics, wine, 14, 5, 4, 4); rect(graphics, brass, 6, 17, 4, 8); rect(graphics, brass, 22, 17, 4, 8); break;
+    case "moon-counter": rect(graphics, ink, 2, 7, 28, 18); rect(graphics, marble, 4, 9, 24, 14); rect(graphics, gold, 4, 9, 24, 3); graphics.lineStyle(2, 0xb9a99b, 1).lineBetween(8, 14, 24, 21).lineBetween(7, 21, 20, 13); rect(graphics, wine, 13, 16, 6, 5); break;
+    case "tea-dispenser": rect(graphics, ink, 7, 4, 18, 20); rect(graphics, 0xb9c5cf, 9, 6, 14, 16); rect(graphics, 0x87b6d9, 11, 8, 10, 10); rect(graphics, gold, 13, 18, 6, 4); rect(graphics, wine, 23, 10, 5, 4); break;
+    case "paper-lantern": rect(graphics, gold, 14, 1, 4, 5); graphics.fillStyle(marble, 1).fillCircle(16, 14, 9); rect(graphics, ink, 9, 13, 14, 2); rect(graphics, gold, 12, 8, 8, 12); rect(graphics, wine, 14, 22, 4, 5); break;
+    case "blue-canopy": rect(graphics, ink, 2, 5, 28, 4); rect(graphics, wine, 3, 6, 26, 3); for (let x = 3; x < 28; x += 6) graphics.fillStyle(x % 12 === 3 ? wine : 0xb85166, 1).fillTriangle(x, 9, x + 6, 9, x + 3, 17); rect(graphics, gold, 4, 16, 2, 10); rect(graphics, gold, 26, 16, 2, 10); break;
+    case "neon-set": rect(graphics, ink, 3, 3, 26, 22); graphics.lineStyle(2, gold, 1).strokeCircle(16, 13, 8); rect(graphics, wine, 15, 5, 2, 16); rect(graphics, wine, 8, 12, 16, 2); rect(graphics, marble, 13, 10, 6, 6); break;
+    case "moon-sign": rect(graphics, ink, 3, 4, 26, 21); rect(graphics, wine, 5, 6, 22, 17); for (let i = 0; i < 3; i += 1) { graphics.fillStyle(gold, 1).fillTriangle(10 + i * 6, 8, 12 + i * 6, 13, 7 + i * 6, 10); } rect(graphics, marble, 8, 17, 16, 3); break;
+    case "wind-chime": rect(graphics, gold, 7, 4, 18, 3); rect(graphics, 0xb9c5cf, 9, 7, 2, 11); rect(graphics, 0xb9c5cf, 15, 7, 2, 15); rect(graphics, 0xb9c5cf, 21, 7, 2, 11); graphics.fillStyle(marble, 1).fillCircle(10, 19, 3); graphics.fillStyle(wine, 1).fillCircle(16, 23, 3); graphics.fillStyle(marble, 1).fillCircle(22, 19, 3); break;
+    case "lucky-cat": rect(graphics, ink, 8, 10, 16, 14); rect(graphics, 0xe7c36a, 10, 12, 12, 10); rect(graphics, wine, 12, 17, 8, 5); rect(graphics, gold, 14, 7, 4, 5); graphics.fillStyle(marble, 1).fillCircle(16, 6, 4); rect(graphics, ink, 23, 8, 4, 11); break;
+    case "festival-drum": rect(graphics, ink, 3, 8, 26, 16); rect(graphics, wine, 5, 10, 22, 12); rect(graphics, gold, 6, 12, 20, 2); rect(graphics, marble, 8, 16, 5, 4); rect(graphics, marble, 19, 16, 5, 4); rect(graphics, brass, 2, 3, 3, 12); rect(graphics, brass, 27, 3, 3, 12); break;
+    case "night-ledger": rect(graphics, ink, 5, 3, 22, 23); rect(graphics, wine, 7, 5, 18, 19); rect(graphics, gold, 9, 8, 14, 2); rect(graphics, marble, 10, 13, 11, 1); rect(graphics, marble, 10, 17, 8, 1); rect(graphics, gold, 5, 4, 3, 21); break;
+    case "coupon-board": rect(graphics, ink, 3, 3, 26, 22); rect(graphics, marble, 5, 5, 22, 18); rect(graphics, wine, 7, 7, 18, 4); rect(graphics, gold, 8, 14, 5, 5); rect(graphics, 0x5f8b6d, 15, 14, 4, 5); rect(graphics, 0x7d88aa, 21, 14, 4, 5); break;
+    case "chef-uniform": rect(graphics, ink, 7, 6, 18, 18); rect(graphics, marble, 9, 8, 14, 14); rect(graphics, ink, 15, 8, 2, 14); rect(graphics, wine, 12, 10, 3, 2); rect(graphics, gold, 18, 10, 2, 2); rect(graphics, marble, 3, 8, 7, 6); rect(graphics, marble, 22, 8, 7, 6); break;
+    case "server-uniform": rect(graphics, ink, 6, 6, 20, 18); rect(graphics, wine, 8, 8, 16, 14); rect(graphics, marble, 13, 8, 6, 9); rect(graphics, gold, 15, 9, 2, 8); rect(graphics, wine, 3, 8, 6, 6); rect(graphics, wine, 23, 8, 6, 6); break;
+    case "staff-badge": rect(graphics, ink, 8, 3, 16, 22); rect(graphics, wine, 10, 5, 12, 17); graphics.fillStyle(gold, 1).fillCircle(16, 11, 5); rect(graphics, marble, 15, 7, 2, 9); rect(graphics, gold, 12, 20, 8, 4); break;
+    case "server-shoes": rect(graphics, ink, 2, 11, 13, 12); rect(graphics, wine, 4, 9, 9, 11); rect(graphics, gold, 3, 20, 13, 3); rect(graphics, ink, 17, 11, 13, 12); rect(graphics, 0x31313a, 19, 9, 9, 11); rect(graphics, gold, 17, 20, 13, 3); break;
+  }
+}
+
+function drawOmakaseFacility(graphics: Graphics, id: FacilityUpgradeId): void {
+  const p = PIXEL_PALETTE; const ink = 0x202737; const indigo = 0x294d78; const vermilion = 0xc55442; const hinoki = 0xd2a066; const rice = 0xfff3d7;
+  switch (id) {
+    case "copper-pot": graphics.fillStyle(ink, 1).fillEllipse(5, 7, 22, 17); graphics.fillStyle(0x7b6550, 1).fillEllipse(7, 9, 18, 13); rect(graphics, hinoki, 10, 7, 12, 3); rect(graphics, rice, 11, 12, 10, 3); rect(graphics, vermilion, 14, 18, 4, 4); break;
+    case "double-burner": rect(graphics, ink, 2, 11, 28, 13); rect(graphics, hinoki, 4, 13, 24, 9); rect(graphics, 0x4a3330, 6, 15, 8, 5); rect(graphics, 0x4a3330, 18, 15, 8, 5); rect(graphics, vermilion, 8, 17, 4, 2); rect(graphics, vermilion, 20, 17, 4, 2); break;
+    case "prep-rack": rect(graphics, ink, 2, 8, 28, 15); rect(graphics, hinoki, 4, 9, 24, 5); rect(graphics, rice, 6, 15, 7, 5); rect(graphics, 0xef8f7b, 14, 15, 5, 5); rect(graphics, 0x78aa8a, 21, 14, 5, 6); rect(graphics, indigo, 5, 21, 22, 2); break;
+    case "steam-hood": rect(graphics, ink, 5, 4, 22, 5); rect(graphics, hinoki, 7, 5, 18, 3); graphics.fillStyle(0xb7ad9d, 1).fillTriangle(3, 9, 29, 9, 24, 18); rect(graphics, indigo, 10, 11, 12, 2); rect(graphics, vermilion, 15, 16, 3, 3); break;
+    case "soft-chair": rect(graphics, ink, 5, 14, 22, 9); rect(graphics, indigo, 7, 12, 18, 9); rect(graphics, hinoki, 9, 15, 14, 4); rect(graphics, vermilion, 14, 14, 4, 4); break;
+    case "wide-table": rect(graphics, ink, 2, 10, 28, 7); rect(graphics, hinoki, 4, 11, 24, 4); rect(graphics, rice, 8, 7, 7, 4); rect(graphics, indigo, 19, 6, 5, 5); rect(graphics, hinoki, 6, 17, 4, 8); rect(graphics, hinoki, 22, 17, 4, 8); break;
+    case "moon-counter": rect(graphics, ink, 2, 7, 28, 18); rect(graphics, hinoki, 4, 9, 24, 14); rect(graphics, rice, 4, 9, 24, 3); rect(graphics, indigo, 7, 15, 18, 5); rect(graphics, vermilion, 14, 16, 4, 3); break;
+    case "tea-dispenser": rect(graphics, ink, 9, 4, 14, 20); rect(graphics, 0x7f8c94, 11, 6, 10, 16); rect(graphics, indigo, 13, 8, 6, 5); rect(graphics, ink, 22, 12, 6, 3); rect(graphics, hinoki, 14, 22, 4, 3); break;
+    case "paper-lantern": rect(graphics, ink, 14, 2, 4, 4); rect(graphics, ink, 8, 6, 16, 18); rect(graphics, rice, 10, 8, 12, 14); rect(graphics, indigo, 10, 12, 12, 3); rect(graphics, vermilion, 14, 9, 4, 12); break;
+    case "blue-canopy": rect(graphics, ink, 2, 5, 28, 4); rect(graphics, indigo, 3, 6, 26, 3); for (let x = 3; x < 28; x += 6) graphics.fillStyle(x % 12 === 3 ? indigo : 0x426a96, 1).fillTriangle(x, 9, x + 6, 9, x + 3, 18); rect(graphics, hinoki, 4, 17, 3, 9); rect(graphics, hinoki, 25, 17, 3, 9); break;
+    case "neon-set": rect(graphics, ink, 3, 4, 26, 20); rect(graphics, 0x151e30, 5, 6, 22, 16); graphics.lineStyle(2, 0x5ed5df, 1).lineBetween(7, 12, 11, 9).lineBetween(11, 9, 16, 12).lineBetween(16, 12, 21, 9).lineBetween(21, 9, 25, 12).lineBetween(7, 17, 11, 20).lineBetween(11, 20, 16, 17).lineBetween(16, 17, 21, 20).lineBetween(21, 20, 25, 17); rect(graphics, vermilion, 15, 8, 2, 12); break;
+    case "moon-sign": rect(graphics, ink, 3, 4, 26, 21); rect(graphics, hinoki, 5, 6, 22, 17); rect(graphics, indigo, 7, 8, 18, 13); rect(graphics, rice, 14, 9, 4, 10); rect(graphics, vermilion, 10, 13, 12, 3); break;
+    case "wind-chime": rect(graphics, hinoki, 7, 4, 18, 3); rect(graphics, 0xaacbd4, 9, 7, 5, 7); rect(graphics, 0xaacbd4, 18, 7, 5, 7); rect(graphics, indigo, 10, 14, 3, 10); rect(graphics, vermilion, 19, 14, 3, 10); break;
+    case "lucky-cat": rect(graphics, ink, 8, 9, 17, 15); rect(graphics, vermilion, 10, 11, 13, 11); rect(graphics, rice, 12, 12, 9, 6); rect(graphics, ink, 14, 13, 2, 2); rect(graphics, ink, 19, 13, 2, 2); rect(graphics, hinoki, 14, 19, 5, 3); break;
+    case "festival-drum": graphics.fillStyle(ink, 1).fillCircle(16, 15, 11); graphics.fillStyle(rice, 1).fillCircle(16, 15, 8); graphics.lineStyle(2, vermilion, 1).strokeCircle(16, 15, 8); rect(graphics, indigo, 14, 8, 4, 14); rect(graphics, hinoki, 3, 2, 3, 13); break;
+    case "night-ledger": rect(graphics, ink, 5, 3, 22, 23); rect(graphics, indigo, 7, 5, 18, 19); rect(graphics, hinoki, 7, 5, 4, 19); rect(graphics, rice, 13, 9, 9, 2); rect(graphics, rice, 13, 14, 7, 2); rect(graphics, vermilion, 17, 18, 5, 4); break;
+    case "coupon-board": rect(graphics, ink, 3, 3, 26, 22); rect(graphics, hinoki, 5, 5, 22, 18); for (let y = 7; y < 21; y += 5) { rect(graphics, indigo, 7, y, 18, 3); rect(graphics, rice, 9, y, 4, 2); rect(graphics, vermilion, 20, y, 3, 2); } break;
+    case "chef-uniform": rect(graphics, ink, 7, 6, 18, 18); rect(graphics, rice, 9, 8, 14, 14); rect(graphics, indigo, 15, 8, 3, 14); rect(graphics, vermilion, 11, 11, 3, 3); rect(graphics, rice, 3, 8, 7, 6); rect(graphics, rice, 22, 8, 7, 6); break;
+    case "server-uniform": rect(graphics, ink, 6, 7, 20, 17); rect(graphics, indigo, 8, 9, 16, 13); rect(graphics, rice, 14, 9, 4, 13); rect(graphics, vermilion, 16, 12, 2, 5); graphics.fillStyle(indigo, 1).fillTriangle(7, 10, 2, 18, 9, 18); graphics.fillStyle(indigo, 1).fillTriangle(25, 10, 30, 18, 23, 18); break;
+    case "staff-badge": rect(graphics, ink, 8, 3, 16, 22); rect(graphics, indigo, 10, 5, 12, 17); rect(graphics, rice, 12, 8, 8, 9); rect(graphics, vermilion, 14, 10, 4, 5); rect(graphics, hinoki, 12, 20, 8, 4); break;
+    case "server-shoes": rect(graphics, ink, 2, 11, 13, 12); rect(graphics, rice, 4, 9, 9, 11); rect(graphics, indigo, 3, 18, 13, 5); rect(graphics, ink, 17, 11, 13, 12); rect(graphics, indigo, 19, 9, 9, 11); rect(graphics, rice, 17, 18, 13, 5); break;
+  }
+}
+
 function drawFacilityObject(graphics: Graphics, id: FacilityUpgradeId, chapterId: ChapterId): void {
   const p = PIXEL_PALETTE;
   const chapter = getChapter(chapterId);
   const outline = p.outline;
   graphics.fillStyle(p.shadow, 0.28).fillEllipse(4, 24, 24, 3);
+  if (chapterId === 2) { drawBeachFacility(graphics, id); return; }
+  if (chapterId === 3) { drawHanokFacility(graphics, id); return; }
+  if (chapterId === 4) { drawDiningFacility(graphics, id); return; }
+  if (chapterId === 5) { drawOmakaseFacility(graphics, id); return; }
   switch (id) {
     case "copper-pot":
       rect(graphics, outline, 5, 10, 22, 12); rect(graphics, 0xc56e3f, 7, 11, 18, 9);
@@ -988,22 +1270,6 @@ function drawFacilityObject(graphics: Graphics, id: FacilityUpgradeId, chapterId
       rect(graphics, 0x59cfc3, 19, 9, 8, 9); rect(graphics, p.warmWhite, 17, 18, 13, 4); break;
   }
 
-  rect(graphics, chapter.accent, 3, 25, 13, 2);
-  rect(graphics, chapter.secondary, 16, 25, 13, 2);
-  if (chapterId === 2) {
-    rect(graphics, 0x8b5738, 27, 2, 2, 7);
-    rect(graphics, chapter.accent, 23, 1, 5, 2);
-    rect(graphics, chapter.accent, 27, 0, 4, 2);
-  } else if (chapterId === 3) {
-    rect(graphics, chapter.secondary, 23, 2, 8, 2);
-    rect(graphics, chapter.accent, 25, 4, 4, 3);
-  } else if (chapterId === 4) {
-    rect(graphics, chapter.accent, 26, 1, 3, 7);
-    rect(graphics, chapter.secondary, 24, 3, 7, 3);
-  } else if (chapterId === 5) {
-    rect(graphics, chapter.secondary, 25, 1, 5, 5);
-    rect(graphics, 0xfff1d6, 26, 2, 3, 3);
-  }
 }
 
 function createFacilityTextures(painter: TexturePainter): void {
