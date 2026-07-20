@@ -22,6 +22,7 @@ export class EconomySystem {
   private money: number;
   private customerCount: number;
   private rating: number;
+  private infiniteMoney: boolean;
   private readonly listeners = new Set<EconomyListener>();
 
   public constructor(initialState: Partial<EconomyState> = {}) {
@@ -34,6 +35,7 @@ export class EconomySystem {
       0,
     );
     this.rating = normalizeRating(initialState.rating, INITIAL_RATING);
+    this.infiniteMoney = initialState.infiniteMoney === true;
   }
 
   public getState(): EconomyState {
@@ -41,6 +43,7 @@ export class EconomySystem {
       money: this.money,
       customerCount: this.customerCount,
       rating: this.rating,
+      infiniteMoney: this.infiniteMoney,
     };
   }
 
@@ -56,8 +59,12 @@ export class EconomySystem {
     return this.rating;
   }
 
+  public isInfiniteMoneyEnabled(): boolean {
+    return this.infiniteMoney;
+  }
+
   public canAfford(amount: number): boolean {
-    return isNonNegativeFiniteNumber(amount) && this.money >= amount;
+    return isNonNegativeFiniteNumber(amount) && (this.infiniteMoney || this.money >= amount);
   }
 
   /** The only production API that removes money. */
@@ -66,7 +73,7 @@ export class EconomySystem {
       return false;
     }
 
-    this.money -= amount;
+    if (!this.infiniteMoney) this.money -= amount;
     this.notify();
     return true;
   }
@@ -165,6 +172,7 @@ export class EconomySystem {
     this.money = normalizeNonNegativeInteger(state.money, INITIAL_MONEY);
     this.customerCount = normalizeNonNegativeInteger(state.customerCount, 0);
     this.rating = normalizeRating(state.rating, INITIAL_RATING);
+    this.infiniteMoney = state.infiniteMoney === true;
     this.notify();
   }
 
@@ -173,6 +181,7 @@ export class EconomySystem {
       money: INITIAL_MONEY,
       customerCount: 0,
       rating: INITIAL_RATING,
+      infiniteMoney: false,
     });
   }
 
@@ -188,6 +197,12 @@ export class EconomySystem {
   /** Test/debug helper. Gameplay code should use addMoney and trySpend. */
   public debugSetMoney(money: number): void {
     this.money = normalizeNonNegativeInteger(money, 0);
+    this.notify();
+  }
+
+  /** Runtime-only test mode. It is intentionally never serialized. */
+  public debugSetInfiniteMoney(enabled: boolean): void {
+    this.infiniteMoney = enabled;
     this.notify();
   }
 
