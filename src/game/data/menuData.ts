@@ -15,7 +15,7 @@ export const MENU_ITEMS = [
   },
   {
     id: "fish-bread",
-    name: "붕어빵",
+    name: "순대",
     cookingTimeMs: 10_000,
     price: 22_000,
   },

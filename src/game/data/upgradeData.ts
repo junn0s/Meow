@@ -74,8 +74,8 @@ export const UPGRADES = [
   {
     id: "unlock-fish-bread",
     order: 7,
-    name: "붕어빵 기계",
-    description: "붕어빵 판매를 시작합니다.",
+    name: "순대 찜솥",
+    description: "순대 판매를 시작합니다.",
     cost: 700,
     prerequisiteId: "add-table",
     effectType: "unlock_menu",

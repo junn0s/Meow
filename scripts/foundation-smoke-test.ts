@@ -11,6 +11,7 @@ import { MUSIC_PHASE_SLOTS, MUSIC_WORLD_CYCLE_MS } from "../src/game/data/musicS
 import { getMusicPlaylist } from "../src/game/audio/musicTracks";
 import { SoundManager } from "../src/game/audio/SoundManager";
 import { getPerformanceProfile } from "../src/game/systems/PerformanceSystem";
+import { getMenuItem } from "../src/game/data/menuData";
 import {
   calculateCharacterTravelDurationMs,
   CHARACTER_MOVE_SPEED_PX_PER_SECOND,
@@ -76,6 +77,7 @@ const sale = calculateSale({
   comboMultiplier: 1.2,
   feverMultiplier: 2,
 });
+assert.equal(getMenuItem("fish-bread").name, "순대", "the third menu must be sundae");
 assert.deepEqual(sale, {
   subtotal: 300,
   baseAmount: 1_080,

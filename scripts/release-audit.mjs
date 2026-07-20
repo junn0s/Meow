@@ -59,6 +59,8 @@ assert.match(performanceSystem, /reflectionsEnabled: false/u, "battery mode must
 assert.match(atmosphere, /atmosphereUpdateIntervalMs/u, "atmosphere updates must be throttled by profile");
 assert.match(main, /"low-power"/u, "touch devices must request a low-power GPU profile");
 const gameScene = read("src/game/scenes/GameScene.ts");
+assert.match(read("src/game/art/PixelArtFactory.ts"), /drawSundaeStation/u, "sundae needs its own worktop art");
+assert.doesNotMatch(read("src/game/data/menuData.ts"), /붕어빵/u, "the retired fish-bread name must not appear in live menu data");
 const releaseServerBody = gameScene.match(/private releaseServer\([\s\S]*?\n  \}\n\n  private configureDebugApi/u)?.[0] ?? "";
 assert.match(gameScene, /paymentPool/u, "payment sprites must be pooled instead of recreated");
 assert.match(gameScene, /startPlayerCooking/u, "the owner must be able to start cooking at a worktop");

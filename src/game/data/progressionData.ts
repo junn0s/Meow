@@ -42,7 +42,7 @@ export interface WorkerHireConfig {
 export const MENU_PROGRESSION_CONFIGS: readonly MenuProgressionConfig[] = [
   { menuItemId: "fishcake", name: "어묵", unlockStage: 1, basePrice: 18, baseCookingTimeMs: 4_000, initialOrderWeight: 1, matureOrderWeight: 1 },
   { menuItemId: "tteokbokki", name: "떡볶이", unlockStage: 6, basePrice: 630, baseCookingTimeMs: 7_000, initialOrderWeight: 0.18, matureOrderWeight: 0.35 },
-  { menuItemId: "fish-bread", name: "붕어빵", unlockStage: 11, basePrice: 22_000, baseCookingTimeMs: 10_000, initialOrderWeight: 0.18, matureOrderWeight: 0.3 },
+  { menuItemId: "fish-bread", name: "순대", unlockStage: 11, basePrice: 22_000, baseCookingTimeMs: 10_000, initialOrderWeight: 0.18, matureOrderWeight: 0.3 },
   { menuItemId: "ramen", name: "야식 라면", unlockStage: 16, basePrice: 790_000, baseCookingTimeMs: 13_000, initialOrderWeight: 0.18, matureOrderWeight: 0.3 },
   { menuItemId: "moon-skewer", name: "달빛 꼬치", unlockStage: 21, basePrice: 28_000_000, baseCookingTimeMs: 16_000, initialOrderWeight: 0.18, matureOrderWeight: 0.3 },
   { menuItemId: "moonlight-set", name: "달빛 정식", unlockStage: 26, basePrice: 1_000_000_000, baseCookingTimeMs: 20_000, initialOrderWeight: 0.18, matureOrderWeight: 0.3 },

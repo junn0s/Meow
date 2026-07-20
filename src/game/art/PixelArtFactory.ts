@@ -52,7 +52,7 @@ export const PIXEL_TEXTURE_KEYS = {
   food: {
     fishcake: "food-fishcake",
     tteokbokki: "food-tteokbokki",
-    fishBread: "food-fish-bread",
+    sundae: "food-fish-bread",
     ramen: "food-ramen",
     moonSkewer: "food-moon-skewer",
     moonlightSet: "food-moonlight-set",
@@ -64,7 +64,7 @@ export const PIXEL_TEXTURE_KEYS = {
   stations: {
     fishcake: "station-fishcake",
     tteokbokki: "station-tteokbokki",
-    fishBread: "station-fish-bread",
+    sundae: "station-fish-bread",
     ramen: "station-ramen",
     moonSkewer: "station-moon-skewer",
     moonlightSet: "station-moonlight-set",
@@ -80,7 +80,7 @@ export const PIXEL_TEXTURE_KEYS = {
     orderBubble: "order-bubble",
     orderFishcake: "order-bubble-fishcake",
     orderTteokbokki: "order-bubble-tteokbokki",
-    orderFishBread: "order-bubble-fish-bread",
+    orderSundae: "order-bubble-fish-bread",
     interaction: "interaction-marker",
     ratingStar: "rating-star",
   },
@@ -368,14 +368,17 @@ function drawFood(graphics: Graphics, kind: FoodKind, offsetX = 0, offsetY = 0):
     rect(graphics, palette.orangeLight, offsetX + 9, offsetY + 8, 3, 2);
     rect(graphics, palette.steelLight, offsetX + 11, offsetY + 2, 2, 6);
   } else if (kind === "fish-bread") {
-    rect(graphics, palette.outline, offsetX + 2, offsetY + 4, 12, 8);
-    rect(graphics, palette.orangeLight, offsetX + 3, offsetY + 5, 10, 6);
-    rect(graphics, palette.orangeDark, offsetX + 5, offsetY + 6, 6, 1);
-    rect(graphics, palette.orangeDark, offsetX + 7, offsetY + 7, 2, 3);
-    rect(graphics, palette.outline, offsetX + 1, offsetY + 6, 3, 4);
-    rect(graphics, palette.outline, offsetX + 12, offsetY + 6, 3, 4);
-    rect(graphics, palette.orangeLight, offsetX + 2, offsetY + 7, 2, 2);
-    rect(graphics, palette.orangeLight, offsetX + 12, offsetY + 7, 2, 2);
+    rect(graphics, palette.outline, offsetX + 1, offsetY + 10, 14, 4);
+    rect(graphics, palette.steelLight, offsetX + 2, offsetY + 11, 12, 2);
+    rect(graphics, palette.outline, offsetX + 2, offsetY + 5, 5, 6);
+    rect(graphics, palette.redDark, offsetX + 3, offsetY + 6, 3, 4);
+    rect(graphics, palette.tan, offsetX + 4, offsetY + 7, 1, 2);
+    rect(graphics, palette.outline, offsetX + 6, offsetY + 3, 5, 8);
+    rect(graphics, palette.brown, offsetX + 7, offsetY + 4, 3, 6);
+    rect(graphics, palette.cream, offsetX + 8, offsetY + 6, 1, 2);
+    rect(graphics, palette.outline, offsetX + 10, offsetY + 5, 5, 6);
+    rect(graphics, palette.redDark, offsetX + 11, offsetY + 6, 3, 4);
+    rect(graphics, palette.tan, offsetX + 12, offsetY + 7, 1, 2);
   } else if (kind === "ramen") {
     rect(graphics, palette.outline, offsetX + 2, offsetY + 7, 12, 6);
     rect(graphics, palette.redDark, offsetX + 3, offsetY + 8, 10, 4);
@@ -470,19 +473,23 @@ function drawTteokbokkiStation(graphics: Graphics): void {
   rect(graphics, palette.steelLight, 35, 2, 3, 10);
 }
 
-function drawFishBreadStation(graphics: Graphics): void {
+function drawSundaeStation(graphics: Graphics): void {
   const palette = PIXEL_PALETTE;
   drawStationBase(graphics);
-  rect(graphics, palette.outline, 7, 6, 34, 14);
-  rect(graphics, palette.charcoal, 8, 7, 32, 12);
-  rect(graphics, palette.steel, 10, 9, 12, 8);
-  rect(graphics, palette.steel, 26, 9, 12, 8);
-  rect(graphics, palette.orangeLight, 12, 11, 8, 4);
-  rect(graphics, palette.orangeLight, 28, 11, 8, 4);
-  rect(graphics, palette.orangeDark, 15, 12, 2, 2);
-  rect(graphics, palette.orangeDark, 31, 12, 2, 2);
-  rect(graphics, palette.outline, 20, 2, 8, 5);
-  rect(graphics, palette.wood, 21, 3, 6, 3);
+  rect(graphics, palette.outline, 7, 7, 34, 13);
+  rect(graphics, palette.steel, 8, 8, 32, 11);
+  rect(graphics, palette.steelLight, 10, 9, 28, 2);
+  rect(graphics, palette.charcoal, 10, 12, 28, 6);
+  rect(graphics, palette.redDark, 12, 13, 7, 3);
+  rect(graphics, palette.brown, 21, 13, 7, 3);
+  rect(graphics, palette.redDark, 30, 13, 6, 3);
+  rect(graphics, palette.tan, 14, 14, 2, 1);
+  rect(graphics, palette.cream, 23, 14, 2, 1);
+  rect(graphics, palette.tan, 32, 14, 2, 1);
+  rect(graphics, palette.outline, 12, 4, 24, 4);
+  rect(graphics, palette.steelLight, 14, 5, 20, 2);
+  rect(graphics, palette.warmWhite, 16, 1, 2, 4);
+  rect(graphics, palette.steelLight, 25, 2, 2, 3);
 }
 
 function drawPremiumStation(graphics: Graphics, kind: FoodKind): void {
@@ -616,7 +623,7 @@ function createFurnitureAndStations(painter: TexturePainter): void {
   painter.paint("seat", 24, 24, drawSeat);
   painter.paint("station-fishcake", 48, 48, drawFishcakeStation);
   painter.paint("station-tteokbokki", 48, 48, drawTteokbokkiStation);
-  painter.paint("station-fish-bread", 48, 48, drawFishBreadStation);
+  painter.paint("station-fish-bread", 48, 48, drawSundaeStation);
   for (const kind of ["ramen", "moon-skewer", "moonlight-set"] as const) {
     painter.paint(`station-${kind}`, 48, 48, (graphics) => drawPremiumStation(graphics, kind));
   }
