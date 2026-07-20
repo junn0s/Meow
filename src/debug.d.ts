@@ -118,7 +118,6 @@ interface DebugWorkerState {
 export interface MeowDinerDebugApi {
   getState(): MeowDinerDebugState;
   grantMoney(amount?: number): void;
-  toggleInfiniteMoney(): boolean;
   setRating(rating?: number): void;
   setWorldPhase(phase: VisualPhase): void;
   setVisualTier(tier: VisualTier): void;
