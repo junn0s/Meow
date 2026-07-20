@@ -57,16 +57,17 @@ export class UpgradePanel {
     this.nameText = scene.add
       .text(363, 65, "추가 좌석", {
         fontFamily: '"Jua", "Gowun Dodum", sans-serif',
-        fontSize: "12px",
+        fontSize: "9px",
+        lineSpacing: -2,
         color: "#fff1c7",
         wordWrap: { width: 104 },
       })
       .setDepth(depth + 2);
     this.descriptionText = scene.add
-      .text(363, 84, "손님을 더 받을 수 있어요.", {
+      .text(363, 88, "손님을 더 받을 수 있어요.", {
         fontFamily: '"Gowun Dodum", sans-serif',
-        fontSize: "8px",
-        lineSpacing: 2,
+        fontSize: "6px",
+        lineSpacing: 1,
         color: "#b8c2df",
         wordWrap: { width: 104 },
       })

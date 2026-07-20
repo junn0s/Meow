@@ -525,6 +525,20 @@ assert.equal(soundSettings.toggleMusicMute(), true);
 assert.equal(soundSettings.settings.musicMuted, true);
 assert.equal(soundSettings.toggleSfxMute(), true);
 assert.equal(soundSettings.settings.sfxMuted, true);
+const soundRegistryValues = new Map<string, unknown>();
+const soundRegistry = {
+  get: (key: string): unknown => soundRegistryValues.get(key),
+  set: (key: string, value: unknown): unknown => {
+    soundRegistryValues.set(key, value);
+    return value;
+  },
+};
+const sharedSound = SoundManager.forRegistry(soundRegistry, false);
+assert.equal(
+  SoundManager.forRegistry(soundRegistry, true),
+  sharedSound,
+  "scene transitions must reuse the same browser audio session",
+);
 assert.deepEqual(
   {
     fps: getPerformanceProfile("balanced", true).targetFps,

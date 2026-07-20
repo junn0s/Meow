@@ -18,6 +18,13 @@ export type SoundSettings = Pick<
   "masterVolume" | "musicVolume" | "sfxVolume" | "muted" | "musicMuted" | "sfxMuted"
 >;
 
+interface SoundManagerRegistry {
+  get(key: string): unknown;
+  set(key: string, value: unknown): unknown;
+}
+
+const SHARED_SOUND_MANAGER_KEY = "meow-night-diner-sound-manager";
+
 const DEFAULT_SOUND_SETTINGS: SoundSettings = {
   masterVolume: 1,
   musicVolume: 0.55,
@@ -102,6 +109,18 @@ export class SoundManager {
   private feverPulseDepth: GainNode | null = null;
   private feverPulseGain: GainNode | null = null;
   private feverOutputGain: GainNode | null = null;
+
+  /** Keep one media element alive across Phaser scene transitions. */
+  public static forRegistry(
+    registry: SoundManagerRegistry,
+    initial: boolean | Partial<SoundSettings> = false,
+  ): SoundManager {
+    const existing = registry.get(SHARED_SOUND_MANAGER_KEY);
+    if (existing instanceof SoundManager) return existing;
+    const manager = new SoundManager(initial);
+    registry.set(SHARED_SOUND_MANAGER_KEY, manager);
+    return manager;
+  }
 
   public constructor(initial: boolean | Partial<SoundSettings> = false) {
     const settings = typeof initial === "boolean"

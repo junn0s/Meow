@@ -120,6 +120,9 @@ const TABLE_POSITIONS = [
   { x: 350, y: 232 },
 ] as const;
 
+// TEMP: Full-playthrough QA button. Remove with the matching button in create().
+const TEMP_TEST_MONEY = 1_000_000_000_000_000;
+
 const SERVER_HOME_POSITIONS = [
   { x: 316, y: 124 },
   { x: 275, y: 124 },
@@ -268,7 +271,7 @@ export class GameScene extends Phaser.Scene {
     this.applyOfflineReward(previousSave, data.newGame === true);
     this.tutorialCompleted = this.currentSave.tutorialCompleted;
     this.elapsedMs = this.currentSave.elapsedMs;
-    this.sfx = new SoundManager(this.currentSave.settings);
+    this.sfx = SoundManager.forRegistry(this.registry, this.currentSave.settings);
     this.dayNight = new DayNightController(
       this.currentSave.worldClockMs,
       this.currentSave.visualTier,
@@ -315,6 +318,12 @@ export class GameScene extends Phaser.Scene {
       if (this.tutorialOverlay !== undefined || this.offlineOverlay !== undefined || this.clearing) return;
       this.openStyleShop();
     }, { width: 44, height: 18, primary: false, fontSize: 7 }).setDepth(920);
+    new PixelButton(this, 325, 68, "테스트 ∞냥", () => this.grantTemporaryTestMoney(), {
+      width: 44,
+      height: 18,
+      primary: false,
+      fontSize: 6,
+    }).setDepth(920);
     this.createInteractionIndicator();
     this.createInputHandlers();
     this.createSubscriptions();
@@ -344,7 +353,7 @@ export class GameScene extends Phaser.Scene {
     this.gameplayFrameCount += 1;
     this.hud.update(stepMs);
     if (this.appHidden || this.isPaused || this.tutorialOverlay !== undefined || this.clearing) {
-      this.sfx.setMusicPaused(true);
+      this.sfx.setMusicPaused(this.appHidden || this.isPaused || this.clearing);
       return;
     }
     this.sfx.setMusicPaused(false);
@@ -584,6 +593,12 @@ export class GameScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setDepth(881)
       .setVisible(false);
+  }
+
+  private grantTemporaryTestMoney(): void {
+    this.economy.debugSetMoney(Math.max(this.economy.getMoney(), TEMP_TEST_MONEY));
+    this.saveProgress();
+    this.toast.show("테스트 자금 1,000조냥 지급!");
   }
 
   private createInputHandlers(): void {
@@ -2912,7 +2927,7 @@ export class GameScene extends Phaser.Scene {
   private handleAppVisibilityChange(hidden: boolean): void {
     this.appHidden = hidden;
     this.sfx.setMusicPaused(
-      hidden || this.isPaused || this.tutorialOverlay !== undefined || this.clearing,
+      hidden || this.isPaused || this.clearing,
     );
   }
 
@@ -2939,7 +2954,6 @@ export class GameScene extends Phaser.Scene {
     keyboard?.off("keydown-SPACE", this.handleSpace, this);
     keyboard?.off("keydown-ESC", this.togglePause, this);
     keyboard?.off("keydown-M", this.toggleMute, this);
-    this.sfx.dispose();
     this.atmosphere.destroy();
     window.__MEOW_DINER__ = undefined;
   }

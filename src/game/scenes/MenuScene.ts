@@ -24,7 +24,8 @@ export class MenuScene extends Phaser.Scene {
       || window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
     const chapter = getChapter(save?.progression.chapterId ?? 1);
     createMenuBackdrop(this, reducedMotion, chapter.id);
-    this.effects = new SoundManager(save?.settings ?? false);
+    this.effects = SoundManager.forRegistry(this.registry, save?.settings ?? false);
+    this.effects.setMusicPaused(false);
     this.effects.setMenuMusic();
     const handleVisibilityChange = (): void => {
       this.effects?.setMusicPaused(document.visibilityState === "hidden");
@@ -134,14 +135,20 @@ export class MenuScene extends Phaser.Scene {
     });
 
     const keyboard = this.input.keyboard;
+    const unlockAudio = (): void => {
+      void this.effects?.unlock();
+    };
+    this.input.on(Phaser.Input.Events.POINTER_DOWN, unlockAudio);
+    keyboard?.on("keydown", unlockAudio);
     keyboard?.once("keydown-ENTER", primaryAction);
     keyboard?.once("keydown-N", () => this.confirmNewGame(primaryButton));
     const removeTouchAction = touchInput.subscribe("action", primaryAction);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
+      this.input.off(Phaser.Input.Events.POINTER_DOWN, unlockAudio);
+      keyboard?.off("keydown", unlockAudio);
       removeTouchAction();
       touchInput.resetDirections();
-      this.effects?.dispose();
     });
     setStatus("메뉴 화면. 시작 버튼을 누르거나 행동 버튼으로 게임을 시작할 수 있습니다.");
   }

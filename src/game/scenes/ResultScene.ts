@@ -32,7 +32,7 @@ export class ResultScene extends Phaser.Scene {
     const nextChapter = data.nextChapterId === undefined ? undefined : getChapter(data.nextChapterId);
     createMenuBackdrop(this, reducedMotion, completedChapterId);
     this.add.rectangle(240, 135, 480, 270, 0x0a0d1d, 0.66).setDepth(15);
-    const sound = new SoundManager(save?.settings ?? false);
+    const sound = SoundManager.forRegistry(this.registry, save?.settings ?? false);
     void sound.unlock();
     sound.clear();
 
@@ -118,7 +118,6 @@ export class ResultScene extends Phaser.Scene {
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       removeTouchAction();
       touchInput.resetDirections();
-      sound.dispose();
     });
     setStatus(nextChapter === undefined
       ? "다섯 개의 가게를 모두 완성했습니다."
