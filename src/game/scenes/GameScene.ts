@@ -12,7 +12,7 @@ import { Player } from "../entities/Player";
 import { DiningTable } from "../entities/Table";
 import { CUSTOMER_DATA, getCustomerData, pickCustomerDataForKinds } from "../data/customerData";
 import { getMenuItem, setActiveMenuChapter } from "../data/menuData";
-import { getChapter } from "../data/chapterData";
+import { getChapter, getNextChapterId } from "../data/chapterData";
 import {
   getStageConfig,
   MAX_WORKERS_PER_ROLE,
@@ -37,9 +37,7 @@ import {
 import { calculateCharacterTravelDurationMs } from "../systems/WorkerMovementRules";
 import {
   CustomizationSystem,
-  AVATAR_ITEMS,
-  FACILITY_UPGRADES,
-  OWNER_STYLES,
+  getFacilityPresentationMode,
   getFacilityRequiredFame,
   getWorktopSlotUpgradeCost,
   type AvatarCategory,
@@ -79,6 +77,7 @@ import { touchInput } from "../input/TouchControls";
 
 export interface GameSceneData {
   readonly newGame?: boolean;
+  readonly advanceChapter?: boolean;
   readonly muted?: boolean;
   readonly audioSettings?: Partial<SoundSettings>;
 }
@@ -234,6 +233,9 @@ export class GameScene extends Phaser.Scene {
     this.resetTransientState();
     this.saveSystem = new SaveSystem();
     const previousSave = this.saveSystem.load();
+    if (data.newGame === true) {
+      this.customization.resetAllPurchases();
+    }
     this.currentSave = data.newGame === true
       ? this.saveSystem.newGame({
           muted: data.audioSettings?.muted ?? data.muted ?? previousSave?.muted ?? false,
@@ -255,6 +257,21 @@ export class GameScene extends Phaser.Scene {
       rating: this.currentSave.rating,
     });
     this.progression = new ProgressionSystem(this.economy, this.currentSave.progression);
+    if (data.advanceChapter === true) {
+      const nextChapterId = this.progression.advanceChapter();
+      if (nextChapterId !== undefined) {
+        this.economy.reset();
+        const resetEconomy = this.economy.getState();
+        this.currentSave = this.saveSystem.save({
+          ...this.currentSave,
+          ...resetEconomy,
+          progression: this.progression.getState(),
+          worldClockMs: 0,
+          visualTier: 1,
+          cleared: false,
+        });
+      }
+    }
     setActiveMenuChapter(this.progression.getChapterId());
     this.customization.setActiveChapter(this.progression.getChapterId());
     const debugStage = readDebugStage(window.location.search);
@@ -268,7 +285,7 @@ export class GameScene extends Phaser.Scene {
     this.performanceMode = this.currentSave.settings.performanceMode;
     this.performanceProfile = getPerformanceProfile(this.performanceMode, this.mobilePowerProfile);
     applyGameLoopFpsLimit(this.game.loop, this.performanceProfile.targetFps);
-    this.applyOfflineReward(previousSave, data.newGame === true);
+    this.applyOfflineReward(previousSave, data.newGame === true || data.advanceChapter === true);
     this.tutorialCompleted = this.currentSave.tutorialCompleted;
     this.elapsedMs = this.currentSave.elapsedMs;
     this.sfx = SoundManager.forRegistry(this.registry, this.currentSave.settings);
@@ -288,6 +305,7 @@ export class GameScene extends Phaser.Scene {
     );
     const initialVisualState = this.dayNight.getState();
     this.currentVisualPhase = initialVisualState.phase;
+    this.syncOuterScenery(initialVisualState.phase);
     this.decor.setVisualTier(initialVisualState.visualTier);
     this.decor.setPhase(initialVisualState.phase, true);
     this.decor.setReducedMotion(this.reducedMotion);
@@ -304,6 +322,7 @@ export class GameScene extends Phaser.Scene {
     this.createStations();
     this.createTables(this.currentEffects.seatCount + this.customization.getFacilityEffects().bonusSeats);
     this.player = new Player(this, 176, 128);
+    this.player.setChapterTheme(this.progression.getChapterId());
     this.player.setOwnerTint(this.customization.getSelected().tint);
     this.player.setAvatarLook(this.customization.getAvatarLook());
     this.createWorkers();
@@ -365,6 +384,7 @@ export class GameScene extends Phaser.Scene {
       const visualState = this.dayNight.update(this.presentationAccumulatorMs);
       if (visualState.phase !== this.currentVisualPhase) {
         this.currentVisualPhase = visualState.phase;
+        this.syncOuterScenery(visualState.phase);
         this.decor.setPhase(visualState.phase);
         this.atmosphere.setPhase(visualState.phase);
         this.sfx.setAmbience(visualState.phase, this.reducedMotion, visualState.phaseTrackIndex, visualState.phaseElapsedMs);
@@ -471,6 +491,11 @@ export class GameScene extends Phaser.Scene {
       station.setCanStartNextResolver((ticket) => this.canStartCookingTicket(ticket));
       this.stations.set(definition.menuItemId, station);
     }
+  }
+
+  private syncOuterScenery(phase: VisualPhase): void {
+    document.body.dataset.gamePhase = phase;
+    document.body.dataset.gameChapter = String(this.progression.getChapterId());
   }
 
   private canStartCookingTicket(ticket: CookingTicket): boolean {
@@ -1010,6 +1035,7 @@ export class GameScene extends Phaser.Scene {
             chef.sprite.y,
             station.x,
             station.y + 18,
+            this.getWorkerMovementSpeedMultiplier(),
           ),
           ease: "Linear",
           onUpdate: () => updateCharacterDepth(chef.sprite, 70),
@@ -1046,6 +1072,7 @@ export class GameScene extends Phaser.Scene {
         chef.sprite.y,
         station.x + 10,
         station.y + 18,
+        this.getWorkerMovementSpeedMultiplier(),
       ),
       ease: "Linear",
       onUpdate: () => updateCharacterDepth(chef.sprite, 70),
@@ -1085,6 +1112,7 @@ export class GameScene extends Phaser.Scene {
           chef.sprite.y,
           station.x,
           station.y + 18,
+          this.getWorkerMovementSpeedMultiplier(),
         ),
         ease: "Linear",
         onUpdate: () => updateCharacterDepth(chef.sprite, 70),
@@ -1124,6 +1152,11 @@ export class GameScene extends Phaser.Scene {
     this.dispatchServerDeliveries();
   }
 
+  private getWorkerMovementSpeedMultiplier(): number {
+    return this.currentEffects.workerMovementSpeedMultiplier
+      * this.progression.getFeverWorkerSpeedMultiplier();
+  }
+
   private dispatchChefOrders(): void {
     for (const chef of this.chefs) {
       if (!chef.sprite.visible || chef.busy) continue;
@@ -1152,6 +1185,7 @@ export class GameScene extends Phaser.Scene {
         chef.sprite.y,
         customer.x - 15,
         customer.y,
+        this.getWorkerMovementSpeedMultiplier(),
       );
       this.tweens.killTweensOf(chef.sprite);
       this.tweens.add({
@@ -1232,6 +1266,7 @@ export class GameScene extends Phaser.Scene {
         server.y,
         station.x + 19,
         station.y + 20,
+        this.getWorkerMovementSpeedMultiplier(),
       ),
       ease: "Linear",
       onUpdate: () => updateCharacterDepth(server, 50),
@@ -1255,6 +1290,7 @@ export class GameScene extends Phaser.Scene {
               server.y,
               target.x + 17,
               target.y,
+              this.getWorkerMovementSpeedMultiplier(),
             ),
             ease: "Linear",
             onUpdate: () => updateCharacterDepth(server, 50),
@@ -1712,6 +1748,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private applyEffects(effects: ProgressionEffects, celebrate: boolean): void {
+    this.player.setMovementSpeedMultiplier(effects.workerMovementSpeedMultiplier);
     this.createTables(effects.seatCount + this.customization.getFacilityEffects().bonusSeats);
     const progressionState = this.progression.getState();
     for (const [menuItemId, station] of this.stations) {
@@ -1772,9 +1809,6 @@ export class GameScene extends Phaser.Scene {
       this.decor.celebrate();
     }
     this.saveProgress();
-    if (result.effects.finalFacilityPurchased && !this.progression.isChapterComplete()) {
-      this.toast.show("최근 서비스 평점 4.5를 채우면 완성!", "warning");
-    }
     if (this.progression.isChapterComplete()) {
       this.beginClearSequence();
     }
@@ -1965,7 +1999,7 @@ export class GameScene extends Phaser.Scene {
     this.offlineOverlay = this.add
       .container(0, 0, [shade, panel, moon, title, amount, details, collect])
       .setDepth(3_500);
-    setStatus(`오프라인 자동 운영 수익 ${reward.amount}냥을 정산했습니다.`);
+    setStatus(`오프라인 자동 운영 수익 ${formatCompactNumber(reward.amount)}냥을 정산했습니다.`);
   }
 
   private closePauseOverlay(): void {
@@ -2001,8 +2035,10 @@ export class GameScene extends Phaser.Scene {
     this.beginLiveShop();
     const shade = this.add.rectangle(240, 135, 480, 270, 0x070a17, 0.82);
     const panel = this.add.rectangle(240, 137, 410, 220, 0x161d35, 1).setStrokeStyle(2, 0x53d8c8);
+    const shopTheme = this.customization.getShopTheme();
+    const avatarItems = this.customization.getAvatarItems();
     const header = this.add.rectangle(240, 48, 406, 38, 0x202947, 1);
-    const title = this.add.text(240, 42, "MOONLIGHT WARDROBE", {
+    const title = this.add.text(240, 42, shopTheme.wardrobeTitle, {
       fontFamily: UI_FONT, fontStyle: "bold", fontSize: "12px", color: "#fff0bd",
     }).setOrigin(0.5);
     const subtitle = this.add.text(240, 57, "LIVE · 영업과 음악은 계속돼요 · 코스튬 즉시 적용", {
@@ -2011,26 +2047,26 @@ export class GameScene extends Phaser.Scene {
     const previewGlow = this.add.circle(105, 131, 38, 0x45c6b8, 0.12).setStrokeStyle(1, 0x45c6b8, 0.45);
     const selectedStyle = this.customization.getSelected();
     const look = this.customization.getAvatarLook();
-    ensureCustomizedPlayerTextures(this, look, selectedStyle.tint);
+    ensureCustomizedPlayerTextures(this, look, selectedStyle.tint, this.progression.getChapterId());
     const preview = this.add.image(
       105,
       126,
-      getCustomizedPlayerTextureKey(look, selectedStyle.tint, "down", 0),
+      getCustomizedPlayerTextureKey(look, selectedStyle.tint, "down", 0, this.progression.getChapterId()),
     ).setScale(2.15);
     const previewLabels = this.add.text(
       105,
       179,
-      `${getAvatarPreviewName(look.hat)} · ${getAvatarPreviewName(look.apron)}\n${getAvatarPreviewName(look.accessory)}`,
+      `${getAvatarPreviewName(look.hat, avatarItems)} · ${getAvatarPreviewName(look.apron, avatarItems)}\n${getAvatarPreviewName(look.accessory, avatarItems)}`,
       { fontFamily: UI_FONT, fontSize: "6px", color: "#b8c6df", align: "center", lineSpacing: 2 },
     ).setOrigin(0.5);
     const items: Phaser.GameObjects.GameObject[] = [shade, panel, header, title, subtitle, previewGlow, preview, previewLabels];
     if (category === "fur") {
-      OWNER_STYLES.forEach((style, index) => {
+      this.customization.getOwnerStyles().forEach((style, index) => {
         const owned = this.customization.isOwned(style.id);
         const selected = selectedStyle.id === style.id;
         const swatch = this.add.circle(166, 86 + index * 29, 6, style.tint).setStrokeStyle(1, selected ? 0xffdf72 : 0x66718f);
         const button = new PixelButton(this, 297, 86 + index * 29,
-          `${style.name} · ${selected ? "장착 중" : owned ? "장착" : `${formatCompactNumber(style.cost)}냥`}`,
+          `${style.name} · ${selected ? "장착 중" : owned ? "장착" : `${formatCompactNumber(this.customization.getOwnerStyleCost(style.id))}냥`}`,
           () => {
             const result = this.customization.purchaseOrEquip(style.id, this.economy);
             if (result === "insufficient") return void this.toast.show("코스튬을 사기엔 돈이 부족해요", "warning");
@@ -2043,18 +2079,18 @@ export class GameScene extends Phaser.Scene {
         items.push(swatch, button);
       });
     } else {
-      AVATAR_ITEMS.filter((item) => item.category === category).forEach((item, index) => {
+      avatarItems.filter((item) => item.category === category).forEach((item, index) => {
         const owned = this.customization.isAvatarOwned(item.id);
         const selected = look[category] === item.id;
         const candidateLook = { ...look, [category]: item.id } as AvatarLook;
-        ensureCustomizedPlayerTextures(this, candidateLook, selectedStyle.tint);
+        ensureCustomizedPlayerTextures(this, candidateLook, selectedStyle.tint, this.progression.getChapterId());
         const icon = this.add.image(
           166,
           86 + index * 29,
-          getCustomizedPlayerTextureKey(candidateLook, selectedStyle.tint, "down", 0),
+          getCustomizedPlayerTextureKey(candidateLook, selectedStyle.tint, "down", 0, this.progression.getChapterId()),
         ).setScale(0.72).setAlpha(selected ? 1 : 0.82);
         const button = new PixelButton(this, 297, 86 + index * 29,
-          `${item.name} · ${selected ? "장착 중" : owned ? "장착" : `${formatCompactNumber(item.cost)}냥`}`,
+          `${item.name} · ${selected ? "장착 중" : owned ? "장착" : `${formatCompactNumber(this.customization.getAvatarItemCost(item.id))}냥`}`,
           () => {
             const result = this.customization.purchaseOrEquipAvatarItem(item.id, this.economy);
             if (result === "insufficient") return void this.toast.show("코스튬을 사기엔 돈이 부족해요", "warning");
@@ -2132,28 +2168,32 @@ export class GameScene extends Phaser.Scene {
     const shade = this.add.rectangle(240, 135, 480, 270, 0x070a17, 0.82);
     const panel = this.add.rectangle(240, 137, 410, 220, 0x171e35, 1).setStrokeStyle(2, 0xffb765);
     const header = this.add.rectangle(240, 48, 406, 38, 0x2d263b, 1);
-    const title = this.add.text(265, 43, "MOONLIGHT SHOP", {
+    const title = this.add.text(265, 43, this.customization.getShopTheme().facilityTitle, {
       fontFamily: UI_FONT, fontStyle: "bold", fontSize: "13px", color: "#fff0bd",
     }).setOrigin(0.5);
     const categoryNames: Record<FacilityCategory, string> = {
       kitchen: "주방", hall: "홀", exterior: "외관", management: "운영", staff: "직원",
     };
-    const subtitle = this.add.text(265, 59, `LIVE · ${categoryNames[category]} 설비는 지정 위치에 설치`, {
+    const subtitleCopy = category === "staff"
+      ? "LIVE · 직원 장비는 캐릭터 외형과 능력치에 직접 적용"
+      : `LIVE · ${categoryNames[category]} 설비는 지정 위치에 설치`;
+    const subtitle = this.add.text(265, 59, subtitleCopy, {
       fontFamily: UI_FONT, fontSize: "6px", color: "#c1adc2",
     }).setOrigin(0.5);
     const items: Phaser.GameObjects.GameObject[] = [shade, panel, header, title, subtitle];
-    FACILITY_UPGRADES.filter((item) => item.category === category).forEach((item, index) => {
+    this.customization.getFacilityUpgrades().filter((item) => item.category === category).forEach((item, index) => {
       const owned = this.customization.isFacilityOwned(item.id);
+      const presentationMode = getFacilityPresentationMode(item.id);
       const fameLevel = this.getCurrentFameBenefits().level;
       const requiredFame = getFacilityRequiredFame(item.id);
       const locked = !owned && fameLevel < requiredFame;
       const cardY = 76 + index * 31;
       const iconPanel = this.add.rectangle(102, cardY, 34, 25, owned ? 0x365a4a : 0x252d49, 1)
         .setStrokeStyle(1, owned ? 0x75d49c : 0x687494);
-      const icon = this.add.image(102, cardY, `facility-${item.id}`).setScale(0.72);
+      const icon = this.add.image(102, cardY, `facility-chapter-${this.progression.getChapterId()}-${item.id}`).setScale(0.72);
       if (!owned) icon.setAlpha(0.76);
       const button = new PixelButton(this, 278, cardY,
-        `${item.name}  |  ${item.effect}\n${owned ? "✓ 보유 · 설치됨" : locked ? `명성 ${requiredFame} 필요` : `${formatCompactNumber(item.cost)}냥`}`,
+        `${item.name}  |  ${item.effect}\n${owned ? presentationMode === "staff" ? "✓ 보유 · 직원 적용됨" : "✓ 보유 · 설치됨" : locked ? `명성 ${requiredFame} 필요` : `${formatCompactNumber(this.customization.getFacilityCost(item.id))}냥`}`,
         () => {
           const result = this.customization.purchaseFacility(item.id, this.economy, fameLevel);
           if (result === "locked") {
@@ -2171,7 +2211,12 @@ export class GameScene extends Phaser.Scene {
             this.decor.setShopFacilities(this.customization.getOwnedFacilityIds());
             this.refreshUi(false);
             this.saveProgress();
-            this.toast.show(`${item.name}, 지정 위치에 설치 완료!`, "success");
+            this.toast.show(
+              presentationMode === "staff"
+                ? `${item.name}, 직원에게 적용 완료!`
+                : `${item.name}, 지정 위치에 설치 완료!`,
+              "success",
+            );
           }
           this.shopOverlay?.destroy(true);
           this.shopOverlay = undefined;
@@ -2603,14 +2648,7 @@ export class GameScene extends Phaser.Scene {
     });
     const state = this.economy.getState();
     this.time.delayedCall(revealDelay + (this.reducedMotion ? 520 : 1_050), () => {
-      const nextChapterId = finalChapter ? undefined : this.progression.advanceChapter(state.rating);
-      if (nextChapterId !== undefined) {
-        this.economy.reset();
-        this.currentEffects = this.progression.getEffects();
-        setActiveMenuChapter(nextChapterId);
-        this.customization.setActiveChapter(nextChapterId);
-        this.saveProgress(false, true);
-      }
+      const nextChapterId = getNextChapterId(completedChapterId);
       this.scene.start("ResultScene", {
         money: state.money,
         customerCount: state.customerCount,
@@ -2741,6 +2779,7 @@ export class GameScene extends Phaser.Scene {
         worker.sprite.y,
         worker.homeX,
         worker.homeY,
+        this.getWorkerMovementSpeedMultiplier(),
       ),
       ease: "Linear",
       onComplete: () => worker.sprite.setDepth(116),
@@ -2825,6 +2864,7 @@ export class GameScene extends Phaser.Scene {
         player: {
           x: Math.round(this.player.x),
           y: Math.round(this.player.y),
+          movementSpeedMultiplier: this.player.getMovementSpeedMultiplier(),
           carrying: this.player.getCarriedFood(),
           carryingQuantity: this.player.getCarriedQuantity(),
         },
@@ -2847,6 +2887,7 @@ export class GameScene extends Phaser.Scene {
       setWorldPhase: (phase) => {
         const state = this.dayNight.setPhase(phase);
         this.currentVisualPhase = state.phase;
+        this.syncOuterScenery(state.phase);
         this.decor.setPhase(state.phase, true);
         this.atmosphere.setPhase(state.phase, true);
         this.sfx.setAmbience(state.phase, this.reducedMotion, state.phaseTrackIndex, state.phaseElapsedMs);
@@ -3041,8 +3082,11 @@ function getEffectiveFameRevenueMultiplier(
   return getFameBenefits(effects.fameLevel, facilityFameBonus).revenueMultiplier;
 }
 
-function getAvatarPreviewName(id: string): string {
-  return AVATAR_ITEMS.find((item) => item.id === id)?.name ?? "기본";
+function getAvatarPreviewName(
+  id: string,
+  items: readonly { readonly id: string; readonly name: string }[],
+): string {
+  return items.find((item) => item.id === id)?.name ?? "기본";
 }
 
 function formatClockTime(timestamp: number): string {

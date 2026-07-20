@@ -78,23 +78,32 @@ export function formatCompactNumber(value: number, maximumFractionDigits = 2): s
   }
   const sign = value < 0 ? "-" : "";
   const absolute = Math.abs(value);
-  const units = [
-    { threshold: 1e12, suffix: "T" },
-    { threshold: 1e9, suffix: "B" },
-    { threshold: 1e6, suffix: "M" },
-    { threshold: 1e3, suffix: "K" },
-  ] as const;
-  const unit = units.find((candidate) => absolute >= candidate.threshold);
-  if (unit === undefined) {
+  if (absolute < 1_000) {
     return `${sign}${Math.round(absolute).toLocaleString("ko-KR")}`;
   }
-  const scaled = absolute / unit.threshold;
+  const unitIndex = Math.max(1, Math.floor(Math.log10(absolute) / 3));
+  const threshold = 10 ** (unitIndex * 3);
+  const scaled = absolute / threshold;
   const digits = scaled >= 100 ? 0 : scaled >= 10 ? 1 : maximumFractionDigits;
-  return `${sign}${Number(scaled.toFixed(digits)).toString()}${unit.suffix}`;
+  return `${sign}${Number(scaled.toFixed(digits)).toString()}${getIdleUnitSuffix(unitIndex)}`;
 }
 
 export function formatCurrency(value: number): string {
   return `${formatCompactNumber(Math.max(0, value))}냥`;
+}
+
+function getIdleUnitSuffix(unitIndex: number): string {
+  const familiarUnits = ["", "K", "M", "B", "T"] as const;
+  const familiar = familiarUnits[unitIndex];
+  if (familiar !== undefined) return familiar;
+
+  const extendedIndex = unitIndex - familiarUnits.length;
+  const first = Math.floor(extendedIndex / 26);
+  const second = extendedIndex % 26;
+  if (first < 26) {
+    return `${String.fromCharCode(97 + first)}${String.fromCharCode(97 + second)}`;
+  }
+  return `u${unitIndex}`;
 }
 
 function niceNumber(value: number): number {

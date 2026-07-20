@@ -166,7 +166,7 @@ export class UpgradePanel {
       const chapter = getChapter(state.chapterId);
       this.badgeText.setText(`CHAPTER ${chapter.id} · 30단계 완성`);
       this.nameText.setText(chapter.finaleName);
-      this.descriptionText.setText("평점 4.5를 달성하면 다음 가게가 열려요!");
+      this.descriptionText.setText("완성 화면의 버튼을 누르면 다음 챕터로 이동해요!");
       this.costText.setText("완성!").setColor("#ffe58a");
       this.button.disableInteractive().setFillStyle(0x39415d).setAlpha(0.7);
       this.buttonText.setText("완료").setColor("#aab4cf");

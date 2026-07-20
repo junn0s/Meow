@@ -7,6 +7,7 @@ import { configureHighDefinitionScene } from "../art/Presentation";
 import { touchInput } from "../input/TouchControls";
 import { getChapter } from "../data/chapterData";
 import type { ChapterId } from "../types/game";
+import { formatCurrency } from "../economy/economyMath";
 
 export interface ResultSceneData {
   readonly money?: number;
@@ -30,6 +31,8 @@ export class ResultScene extends Phaser.Scene {
     const completedChapterId = data.completedChapterId ?? 1;
     const chapter = getChapter(completedChapterId);
     const nextChapter = data.nextChapterId === undefined ? undefined : getChapter(data.nextChapterId);
+    document.body.dataset.gamePhase = "night";
+    document.body.dataset.gameChapter = String(completedChapterId);
     createMenuBackdrop(this, reducedMotion, completedChapterId);
     this.add.rectangle(240, 135, 480, 270, 0x0a0d1d, 0.66).setDepth(15);
     const sound = SoundManager.forRegistry(this.registry, save?.settings ?? false);
@@ -61,7 +64,7 @@ export class ResultScene extends Phaser.Scene {
     const seconds = Math.floor(elapsedMs / 1000);
     const stats = [
       ["찾아온 손님", `${data.customerCount ?? 0}명`],
-      ["남은 매출", `${(data.money ?? 0).toLocaleString("ko-KR")}냥`],
+      ["남은 매출", formatCurrency(data.money ?? 0)],
       ["가게 평점", `${(data.rating ?? 5).toFixed(1)} / 5.0`],
       ["영업 시간", `${Math.floor(seconds / 60)}분 ${seconds % 60}초`],
     ] as const;
@@ -83,11 +86,13 @@ export class ResultScene extends Phaser.Scene {
 
     const continueJourney = (): void => {
       sound.click();
-      this.scene.start("GameScene", { newGame: nextChapter === undefined });
+      this.scene.start("GameScene", nextChapter === undefined
+        ? { newGame: true }
+        : { advanceChapter: true });
     };
     new PixelButton(this, 240, 210, nextChapter === undefined
       ? "처음부터 다시 시작"
-      : `CH.${nextChapter.id} ${nextChapter.shortTitle} 오픈`, continueJourney, {
+      : `다음 챕터 · CH.${nextChapter.id}`, continueJourney, {
       width: nextChapter === undefined ? 150 : 190,
       height: 28,
       primary: true,

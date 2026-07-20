@@ -6,6 +6,7 @@ import {
 } from "../data/visualData";
 import type { ChapterId, GrowthStage, VisualPhase, VisualTier } from "../types/game";
 import { getChapter } from "../data/chapterData";
+import { getFacilityPresentationMode } from "../systems/CustomizationSystem";
 
 export const UI_FONT = '"Apple SD Gothic Neo", "Noto Sans KR", system-ui, sans-serif';
 
@@ -56,15 +57,13 @@ export function createGameBackdrop(scene: Phaser.Scene, chapterId: ChapterId = 1
     ["neon-set", 174, 48, 0.82, 9], ["moon-sign", 221, 48, 0.72, 9],
     ["wind-chime", 310, 69, 0.66, 10], ["lucky-cat", 327, 178, 0.78, 40],
     ["festival-drum", 222, 204, 0.78, 42], ["night-ledger", 252, 87, 0.68, 16],
-    ["coupon-board", 35, 112, 0.7, 15], ["chef-uniform", 258, 181, 0.72, 38],
-    ["server-uniform", 285, 181, 0.72, 38], ["staff-badge", 308, 180, 0.62, 39],
-    ["server-shoes", 251, 207, 0.68, 43],
+    ["coupon-board", 35, 112, 0.7, 15],
   ] as const;
   const facilityObjects = new Map<string, Phaser.GameObjects.Image>();
   for (const [id, x, y, scale, depth] of facilityPlacements) {
     facilityObjects.set(
       id,
-      scene.add.image(x, y, `facility-${id}`).setScale(scale).setDepth(depth).setVisible(false),
+      scene.add.image(x, y, `facility-chapter-${chapterId}-${id}`).setScale(scale).setDepth(depth).setVisible(false),
     );
   }
 
@@ -192,7 +191,9 @@ export function createGameBackdrop(scene: Phaser.Scene, chapterId: ChapterId = 1
     },
     setShopTier(_tier): void { renderFacilityDetails(); },
     setShopFacilities(facilityIds): void {
-      shopFacilities = new Set(facilityIds);
+      shopFacilities = new Set(
+        facilityIds.filter((id) => getFacilityPresentationMode(id) === "world"),
+      );
       renderFacilityDetails();
     },
     setReducedMotion(reducedMotion): void {

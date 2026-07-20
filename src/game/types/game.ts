@@ -173,6 +173,8 @@ export interface ProgressionEffects {
   readonly serverCount: number;
   readonly chefActionTimeMultiplier: number;
   readonly serverActionTimeMultiplier: number;
+  /** Worker travel speed gained from repeated service-flow upgrades. */
+  readonly workerMovementSpeedMultiplier: number;
   /** Simultaneous hired-chef jobs. The owner always has one separate manual slot. */
   readonly cookingSlotCount: number;
   readonly chefHired: boolean;

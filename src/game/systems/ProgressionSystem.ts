@@ -31,8 +31,6 @@ import {
   getSharedMenuPriceLevelGain,
 } from "./MenuPriceProgressionRules";
 
-export const PROGRESSION_CLEAR_RATING = 4.5;
-
 const FEVER_DURATIONS_MS = [0, 15_000, 18_000, 20_000] as const;
 const FEVER_COOLDOWNS_MS = [0, 18_000, 16_000, 14_000] as const;
 const FEVER_REVENUE_MULTIPLIERS = [1, 1.5, 1.65, 1.8] as const;
@@ -43,9 +41,9 @@ const NO_FEVER_TRANSITION = Object.freeze({ activated: false, ended: false });
 
 const GENERIC_EFFECTS = [
   { effect: "menu_price", name: "모든 메뉴 판매가격 상승", description: "해금한 모든 메뉴의 판매가격이 함께 올라갑니다." },
-  { effect: "menu_speed", name: "주력 메뉴 조리시간 10% 단축", description: "현재 주력 메뉴가 10% 더 빨리 완성됩니다." },
+  { effect: "menu_speed", name: "주력 메뉴 조리시간 16% 단축", description: "현재 주력 메뉴가 16% 더 빨리 완성됩니다." },
   { effect: "menu_price", name: "모든 메뉴 판매가격 상승", description: "싼 메뉴를 포함한 모든 메뉴의 판매가격이 함께 올라갑니다." },
-  { effect: "service_flow", name: "직원 작업시간 2% 단축", description: "셰프의 주문 접수와 알바의 서빙 준비가 2% 빨라집니다." },
+  { effect: "service_flow", name: "사장·직원 이동속도 5% 상승", description: "사장과 직원의 이동은 5% 빨라지고, 직원 작업시간도 5% 줄어듭니다." },
   { effect: "decor", name: "가게 외형 성장 + 메뉴값 상승", description: "가게가 꾸며지고 모든 메뉴의 판매가격도 함께 올라갑니다." },
 ] as const;
 
@@ -143,8 +141,8 @@ export class ProgressionSystem {
     const completedConfig = completedStage > 0
       ? STAGE_CONFIGS[completedStage - 1]
       : undefined;
-    const cookingTimeMultiplier = (completedStage >= 3 ? 0.85 : 1)
-      * (completedStage >= 17 ? 0.82 : 1);
+    const cookingTimeMultiplier = (completedStage >= 3 ? 0.8 : 1)
+      * (completedStage >= 17 ? 0.75 : 1);
     const unlockedMenuIds = this.state.menuProgress
       .filter((menu) => menu.unlocked)
       .map((menu) => menu.menuItemId);
@@ -157,12 +155,19 @@ export class ProgressionSystem {
       chefCount: this.state.workerProgress.chefCount,
       serverCount: this.state.workerProgress.serverCount,
       chefActionTimeMultiplier: Math.max(
-        0.55,
-        0.98 ** this.state.workerProgress.chefSpeedLevel,
+        0.35,
+        0.95 ** this.state.workerProgress.chefSpeedLevel,
       ),
       serverActionTimeMultiplier: Math.max(
-        0.55,
-        0.98 ** this.state.workerProgress.serverSpeedLevel,
+        0.35,
+        0.95 ** this.state.workerProgress.serverSpeedLevel,
+      ),
+      workerMovementSpeedMultiplier: Math.min(
+        1.8,
+        1.05 ** Math.max(
+          this.state.workerProgress.chefSpeedLevel,
+          this.state.workerProgress.serverSpeedLevel,
+        ),
       ),
       cookingSlotCount: Math.max(1, this.state.workerProgress.chefCount),
       chefHired: this.state.workerProgress.chefCount > 0,
@@ -367,16 +372,16 @@ export class ProgressionSystem {
       && this.state.purchasedStepCount >= getStageConfig(30, this.state.chapterId).purchaseCosts.length;
   }
 
-  public isChapterComplete(rating = this.economy.getRating()): boolean {
-    return this.isFinalFacilityPurchased() && rating >= PROGRESSION_CLEAR_RATING;
+  public isChapterComplete(): boolean {
+    return this.isFinalFacilityPurchased();
   }
 
-  public isGameComplete(rating = this.economy.getRating()): boolean {
-    return this.state.chapterId === 5 && this.isChapterComplete(rating);
+  public isGameComplete(): boolean {
+    return this.state.chapterId === 5 && this.isChapterComplete();
   }
 
-  public advanceChapter(rating = this.economy.getRating()): ChapterId | undefined {
-    if (!this.isChapterComplete(rating)) return undefined;
+  public advanceChapter(): ChapterId | undefined {
+    if (!this.isChapterComplete()) return undefined;
     const nextChapterId = getNextChapterId(this.state.chapterId);
     if (nextChapterId === undefined) return undefined;
     this.state = createDefaultProgressionState(nextChapterId);
@@ -547,10 +552,10 @@ function buildPurchase(state: ProgressionState): ProgressionPurchaseData {
     step,
     stepCount,
     name: generic.effect === "menu_speed"
-      ? `${activeMenuName} 조리시간 10% 단축`
+      ? `${activeMenuName} 조리시간 16% 단축`
       : generic.name,
     description: generic.effect === "menu_speed"
-      ? `${activeMenuName} 주문이 10% 더 빨리 완성됩니다.`
+      ? `${activeMenuName} 주문이 16% 더 빨리 완성됩니다.`
       : generic.description,
     cost,
     effect: generic.effect,
@@ -579,8 +584,8 @@ function getStageKeyEffectCopy(stage: GrowthStage, chapterId: ChapterId): { name
     )?.name ?? "메뉴";
     changes.push(`${specialMenuName} 판매가격 ×${special.multiplier}`);
   }
-  if (stage === 3) changes.push("모든 메뉴 조리시간 15% 단축");
-  if (stage === 17) changes.push("모든 메뉴 조리시간 추가 18% 단축");
+  if (stage === 3) changes.push("모든 메뉴 조리시간 20% 단축");
+  if (stage === 17) changes.push("모든 메뉴 조리시간 추가 25% 단축");
   const previousChefCount = previousConfig?.chefCount ?? 0;
   if (config.chefCount > previousChefCount) changes.push(`셰프 ${config.chefCount}명 고용`);
   const previousServerCount = previousConfig?.serverCount ?? 0;
@@ -617,9 +622,9 @@ function getStageKeyEffectCopy(stage: GrowthStage, chapterId: ChapterId): { name
           : serverHired
             ? `서빙 알바 ${config.serverCount}명 고용`
             : stage === 3
-              ? "전체 조리시간 -15%"
+              ? "전체 조리시간 -20%"
               : stage === 17
-                ? "전체 조리시간 -18%"
+                ? "전체 조리시간 -25%"
                 : seatsAdded
                   ? `좌석 ${previousSeatCount}개 → ${config.seatCount}개`
                   : changes[0] ?? `${stage}단계 완료`;

@@ -46,7 +46,9 @@ import {
 import { getFameBenefits } from "../src/game/systems/FameSystem";
 import { pickCustomerDataForKinds } from "../src/game/data/customerData";
 import {
+  FACILITY_UPGRADES,
   CustomizationSystem,
+  getFacilityPresentationMode,
   getWorktopSlotUpgradeCost,
 } from "../src/game/systems/CustomizationSystem";
 import {
@@ -60,7 +62,7 @@ import {
   SAVE_DATA_VERSION,
   SaveSystem,
 } from "../src/game/systems/SaveSystem";
-import { CustomerState, type StorageLike } from "../src/game/types/game";
+import { CHAPTER_IDS, CustomerState, type StorageLike } from "../src/game/types/game";
 
 class MapStorage implements StorageLike {
   private readonly values = new Map<string, string>();
@@ -104,9 +106,14 @@ assert.equal(economy.getMoney(), 100, "the removed hidden x3 must not return");
 assert.equal(new EconomySystem().recordServiceScore(1), 1.32);
 assert.equal(getWorktopUpgradeCost(100, 2), 118);
 assert.equal(getMenuPrice(100, 10), 417);
-assert.equal(getCookingTimeMs(10_000, 100), 3_500, "cooking speed must respect its floor");
+assert.equal(getCookingTimeMs(10_000, 100), 2_500, "cooking speed must respect its floor");
 assert.equal(getCookingTimeMs(10_000, 0, 1, 3), 23_000);
 assert.equal(formatCompactNumber(1_250_000), "1.25M");
+assert.equal(formatCompactNumber(1e9), "1B");
+assert.equal(formatCompactNumber(1e12), "1T");
+assert.equal(formatCompactNumber(1e15), "1aa");
+assert.equal(formatCompactNumber(1e18), "1ab");
+assert.equal(formatCompactNumber(18e27), "18ae");
 assert.equal(getSharedMenuPriceLevelGain("menu_price"), 1);
 assert.equal(getSharedMenuPriceLevelGain("decor"), 1);
 assert.equal(getSharedMenuPriceLevelGain("service_flow"), 0);
@@ -136,9 +143,16 @@ const staffEconomy = new EconomySystem({ money: 10_750_000 });
 assert.equal(cosmetics.purchaseFacility("chef-uniform", staffEconomy), "purchased");
 assert.equal(cosmetics.purchaseFacility("server-uniform", staffEconomy), "purchased");
 assert.equal(cosmetics.purchaseFacility("staff-badge", staffEconomy), "purchased");
-assert.equal(cosmetics.getFacilityEffects().chefTint, 0x8ff0df);
-assert.equal(cosmetics.getFacilityEffects().serverTint, 0xff9dcd);
+assert.equal(cosmetics.getFacilityEffects().chefTint, 0x45d8d0);
+assert.equal(cosmetics.getFacilityEffects().serverTint, 0xf15bd1);
 assert.equal(cosmetics.getFacilityEffects().chefActionTimeMultiplier, 0.95);
+for (const item of FACILITY_UPGRADES) {
+  assert.equal(
+    getFacilityPresentationMode(item.id),
+    item.category === "staff" ? "staff" : "world",
+    `${item.id} must use the correct placement rule`,
+  );
+}
 const expandedShopEconomy = new EconomySystem({ money: 33_900_000 });
 assert.equal(cosmetics.purchaseFacility("steam-hood", expandedShopEconomy), "purchased");
 assert.equal(cosmetics.purchaseFacility("tea-dispenser", expandedShopEconomy), "purchased");
@@ -164,6 +178,35 @@ assert.equal(cosmetics.getWorktopSlotCount("fishcake"), 3);
 assert.equal(cosmetics.purchaseWorktopSlot("fishcake", 100, worktopEconomy), "maxed");
 cosmetics.setActiveChapter(2);
 assert.equal(cosmetics.getWorktopSlotCount("fishcake"), 1, "each chapter needs fresh menu worktops");
+assert.deepEqual(cosmetics.getOwnedFacilityIds(), [], "chapter changes must remove the previous shop facilities");
+assert.equal(cosmetics.isAvatarOwned("eyes-sparkle"), false, "chapter changes must remove old cosmetics");
+assert.equal(cosmetics.getShopTheme().label, "알로하 선셋 컬렉션");
+assert.equal(cosmetics.getFacilityUpgrades()[0]?.name, "트로피컬 셰이커");
+assert.equal(cosmetics.getAvatarItems().find((item) => item.id === "hat-chef")?.name, "비치 바텐더 햇");
+cosmetics.resetAllPurchases();
+assert.equal(cosmetics.getSelected().id, "cream", "a new night must reset the owner style");
+assert.deepEqual(cosmetics.getOwnedFacilityIds(), [], "a new night must clear facility purchases");
+assert.equal(cosmetics.getAvatarLook().eyes, "eyes-round", "a new night must reset equipped cosmetics");
+assert.equal(cosmetics.isAvatarOwned("eyes-sparkle"), false, "a new night must clear cosmetic purchases");
+for (const chapterId of CHAPTER_IDS) {
+  cosmetics.setActiveChapter(chapterId);
+  assert.equal(
+    cosmetics.getWorktopSlotCount("fishcake"),
+    1,
+    `a new night must reset chapter ${chapterId} worktop slots`,
+  );
+}
+const chapterShop = new CustomizationSystem();
+chapterShop.setActiveChapter(2);
+assert.equal(chapterShop.getOwnerStyleCost("peach"), 500e9);
+assert.equal(chapterShop.getAvatarItemCost("eyes-sleepy"), 1_000e9);
+assert.equal(chapterShop.getFacilityCost("copper-pot"), 2_000e9);
+const chapterShopEconomy = new EconomySystem({ money: 500e9 });
+assert.equal(chapterShop.purchaseOrEquip("peach", chapterShopEconomy), "purchased");
+assert.equal(chapterShopEconomy.getMoney(), 0, "shop prices must use the active chapter unit scale");
+const chapterFacilityEconomy = new EconomySystem({ money: 2_000e9 });
+assert.equal(chapterShop.purchaseFacility("copper-pot", chapterFacilityEconomy), "purchased");
+assert.ok(Math.abs(chapterShop.getFacilityEffects().cookingTimeMultiplier - 0.89) < 0.000_001);
 cosmetics.setActiveChapter(1);
 const chefOneTicket = {
   customerId: "cook-a",
@@ -230,8 +273,8 @@ assert.equal(
 assert.equal(getStageConfig(6).targetDurationSeconds, 204);
 assert.equal(getStageConfig(11).targetDurationSeconds, 336);
 assert.equal(getStageConfig(30).targetDurationSeconds, 2_520);
-assert.equal(getStageConfig(1, 2).purchaseCosts[0], getStageConfig(1).purchaseCosts[0] * 2);
-assert.equal(getStageConfig(1, 5).purchaseCosts[0], getStageConfig(1).purchaseCosts[0] * 30);
+assert.equal(getStageConfig(1, 2).purchaseCosts[0], getStageConfig(1).purchaseCosts[0] * 1e9);
+assert.equal(getStageConfig(1, 5).purchaseCosts[0], getStageConfig(1).purchaseCosts[0] * 1e36);
 assert.equal(TOTAL_TARGET_ACTIVE_SECONDS, 16_218);
 assert.equal(
   WORKER_HIRE_CONFIGS.find((worker) => worker.role === "server" && worker.ordinal === 1)?.cost,
@@ -275,18 +318,21 @@ assert.equal(
 assert.ok(progression.getMenuPrice("fishcake") > 18);
 assert.equal(progression.getState().workerProgress.chefSpeedLevel, 1);
 assert.equal(progression.getState().workerProgress.serverSpeedLevel, 1);
-assert.equal(progression.getEffects().chefActionTimeMultiplier, 0.98);
-assert.equal(progression.getEffects().serverActionTimeMultiplier, 0.98);
+assert.equal(progression.getEffects().chefActionTimeMultiplier, 0.95);
+assert.equal(progression.getEffects().serverActionTimeMultiplier, 0.95);
+assert.equal(progression.getEffects().workerMovementSpeedMultiplier, 1.05);
 const chapterEconomy = new EconomySystem();
 const chapterProgression = new ProgressionSystem(chapterEconomy);
 chapterProgression.debugGrantThroughStage(30);
-chapterEconomy.debugSetProgress(500, 5);
-assert.equal(chapterProgression.isChapterComplete(), true);
+chapterEconomy.debugSetProgress(500, 1);
+assert.equal(chapterProgression.isChapterComplete(), true, "rating must not gate the next-chapter button");
 assert.equal(chapterProgression.isGameComplete(), false, "chapter one must open the next restaurant, not end the game");
 assert.equal(chapterProgression.advanceChapter(), 2);
 assert.equal(chapterProgression.getState().chapterId, 2);
 assert.equal(chapterProgression.getCurrentStage(), 1);
 assert.deepEqual(chapterProgression.getEffects().unlockedMenuIds, ["fishcake"]);
+assert.equal(chapterProgression.getMenuPrice("fishcake"), 18e9, "chapter two must start in B units");
+assert.equal(chapterProgression.getNextPurchase()?.purchase.cost, 8e9);
 for (const expectedNextChapter of [3, 4, 5] as const) {
   chapterProgression.debugGrantThroughStage(30);
   assert.equal(chapterProgression.advanceChapter(), expectedNextChapter);
@@ -298,7 +344,7 @@ assert.equal(chapterProgression.advanceChapter(), undefined);
 const purchaseCopyProgression = new ProgressionSystem(new EconomySystem());
 assert.equal(purchaseCopyProgression.getNextPurchase()?.purchase.name, "모든 메뉴 판매가격 상승");
 purchaseCopyProgression.debugCompleteNextPurchase();
-assert.equal(purchaseCopyProgression.getNextPurchase()?.purchase.name, "어묵 조리시간 10% 단축");
+assert.equal(purchaseCopyProgression.getNextPurchase()?.purchase.name, "어묵 조리시간 16% 단축");
 purchaseCopyProgression.debugGrantThroughStage(2);
 for (let step = 0; step < 5; step += 1) purchaseCopyProgression.debugCompleteNextPurchase();
 assert.equal(purchaseCopyProgression.getNextPurchase()?.purchase.name, "좌석 2개 → 3개");
@@ -482,6 +528,7 @@ assert.deepEqual(getJoystickDirections(0.05, 0.05), [], "the joystick center mus
 assert.equal(CHARACTER_MOVE_SPEED_PX_PER_SECOND, 78);
 assert.equal(calculateCharacterTravelDurationMs(0, 0, 78, 0), 1_000);
 assert.equal(calculateCharacterTravelDurationMs(0, 0, 0, 156), 2_000);
+assert.equal(calculateCharacterTravelDurationMs(0, 0, 78, 0, 2), 500);
 touchInput.pressDirection(11, "left");
 touchInput.pressDirection(12, "up");
 assert.equal(touchInput.isDirectionDown("left"), true);

@@ -7,6 +7,30 @@
   text-rendering: optimizeLegibility;
 }
 
+@property --sky-top {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #080b1d;
+}
+
+@property --sky-middle {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #111a39;
+}
+
+@property --sky-horizon {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #29345a;
+}
+
+@property --land-color {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #090e20;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -21,11 +45,95 @@ body {
 }
 
 body {
+  --sky-top: #080b1d;
+  --sky-middle: #111a39;
+  --sky-horizon: #29345a;
+  --land-color: #090e20;
+  --building-color: #0c1227;
+  --building-edge: #27304d;
+  --celestial-color: #ffe5a1;
+  --celestial-glow: #ffd36b55;
+  --celestial-mask: transparent;
+  --cloud-color: #53618855;
+  --window-color: #ffd56a;
+  --star-color: #dce8ff;
+  position: relative;
+  isolation: isolate;
   overflow: hidden;
   overscroll-behavior: none;
   background:
-    radial-gradient(circle at 50% 22%, rgba(56, 74, 138, 0.25), transparent 32rem),
-    linear-gradient(#080b19 0 64%, #111326 64% 100%);
+    linear-gradient(
+      to bottom,
+      var(--sky-top) 0 24%,
+      var(--sky-middle) 24% 48%,
+      var(--sky-horizon) 48% 70%,
+      var(--land-color) 70% 100%
+    );
+  transition:
+    --sky-top 1.2s ease,
+    --sky-middle 1.2s ease,
+    --sky-horizon 1.2s ease,
+    --land-color 1.2s ease;
+}
+
+body[data-game-phase="day"] {
+  --sky-top: #4f9fca;
+  --sky-middle: #7fc7d6;
+  --sky-horizon: #f0d39e;
+  --land-color: #496b69;
+  --building-color: #365c63;
+  --building-edge: #63838a;
+  --celestial-color: #ffe589;
+  --celestial-glow: #fff2ad88;
+  --celestial-mask: transparent;
+  --cloud-color: #fff0cfcc;
+  --window-color: #d7f0dc;
+  --star-color: transparent;
+}
+
+body[data-game-phase="sunset"] {
+  --sky-top: #443b78;
+  --sky-middle: #b35f72;
+  --sky-horizon: #f0a05f;
+  --land-color: #292744;
+  --building-color: #22213b;
+  --building-edge: #4d3b57;
+  --celestial-color: #ffd176;
+  --celestial-glow: #ff9d6266;
+  --celestial-mask: transparent;
+  --cloud-color: #5f406a88;
+  --window-color: #ffce72;
+  --star-color: #f6ddcf66;
+}
+
+body[data-game-phase="night"] {
+  --sky-top: #070b1c;
+  --sky-middle: #111a3b;
+  --sky-horizon: #26345d;
+  --land-color: #080d1e;
+  --building-color: #0b1125;
+  --building-edge: #273251;
+  --celestial-color: #fff0b1;
+  --celestial-glow: #9ebcff66;
+  --celestial-mask: #070b1c;
+  --cloud-color: #46547c55;
+  --window-color: #ffd269;
+  --star-color: #d9e8ff;
+}
+
+body[data-game-phase="dawn"] {
+  --sky-top: #29335f;
+  --sky-middle: #696b99;
+  --sky-horizon: #d39a9e;
+  --land-color: #293646;
+  --building-color: #253345;
+  --building-edge: #526276;
+  --celestial-color: #f5e7ca;
+  --celestial-glow: #d8c9ff55;
+  --celestial-mask: #29335f;
+  --cloud-color: #dad7e688;
+  --window-color: #f1bf70;
+  --star-color: #dce4ff88;
 }
 
 button,
@@ -44,20 +152,50 @@ canvas,
 body::before {
   position: fixed;
   inset: 0;
+  z-index: 0;
   content: "";
   pointer-events: none;
-  opacity: 0.2;
-  background-image: repeating-linear-gradient(
-    105deg,
-    transparent 0 24px,
-    rgba(119, 157, 212, 0.24) 25px 26px,
-    transparent 27px 48px
+  background:
+    linear-gradient(var(--cloud-color), var(--cloud-color)) 8% 12% / 88px 10px no-repeat,
+    linear-gradient(var(--cloud-color), var(--cloud-color)) 11% 10% / 42px 8px no-repeat,
+    linear-gradient(var(--cloud-color), var(--cloud-color)) 91% 34% / 112px 11px no-repeat,
+    linear-gradient(var(--cloud-color), var(--cloud-color)) 88% 31% / 48px 8px no-repeat,
+    radial-gradient(circle at 83.5% 14.5%, var(--celestial-mask) 0 18px, transparent 19px),
+    radial-gradient(circle at 82% 16%, var(--celestial-color) 0 22px, var(--celestial-glow) 23px 34px, transparent 35px),
+    radial-gradient(circle, var(--star-color) 0 1px, transparent 2px) 0 0 / 74px 58px,
+    radial-gradient(circle, var(--star-color) 0 1px, transparent 2px) 31px 17px / 103px 79px;
+  image-rendering: pixelated;
+  transition: opacity 600ms ease;
+}
+
+body::after {
+  position: fixed;
+  z-index: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 34vh;
+  min-height: 190px;
+  content: "";
+  pointer-events: none;
+  background:
+    radial-gradient(circle, var(--window-color) 0 2px, transparent 2.5px) 7px 8px / 30px 26px repeat,
+    repeating-linear-gradient(90deg, var(--building-color) 0 7vw, var(--building-edge) 7vw 7.4vw, var(--building-color) 7.4vw 14vw);
+  clip-path: polygon(
+    0 34%, 5% 34%, 5% 18%, 11% 18%, 11% 39%, 17% 39%,
+    17% 10%, 24% 10%, 24% 30%, 31% 30%, 31% 21%, 38% 21%,
+    38% 43%, 45% 43%, 45% 15%, 53% 15%, 53% 33%, 60% 33%,
+    60% 6%, 67% 6%, 67% 27%, 73% 27%, 73% 18%, 81% 18%,
+    81% 38%, 88% 38%, 88% 12%, 95% 12%, 95% 29%, 100% 29%,
+    100% 100%, 0 100%
   );
-  animation: rain 1.1s linear infinite;
+  opacity: 0.92;
+  image-rendering: pixelated;
 }
 
 .app-shell {
   position: relative;
+  z-index: 1;
   display: grid;
   place-content: center;
   min-height: 100dvh;
@@ -230,11 +368,6 @@ body::before {
   border-bottom-width: 2px;
   background: #33446e;
   transform: translateY(2px);
-}
-
-@keyframes rain {
-  from { transform: translate3d(-20px, -20px, 0); }
-  to { transform: translate3d(28px, 48px, 0); }
 }
 
 @keyframes mobile-upgrade-success {
@@ -540,6 +673,5 @@ body::before {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  body::before { animation: none; }
   *, *::before, *::after { scroll-behavior: auto !important; }
 }

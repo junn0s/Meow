@@ -88,6 +88,7 @@ export interface MeowDinerDebugState {
   readonly player: {
     readonly x: number;
     readonly y: number;
+    readonly movementSpeedMultiplier: number;
     readonly carrying?: string;
     readonly carryingQuantity: number;
   };

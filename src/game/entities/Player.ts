@@ -1,5 +1,5 @@
 import Phaser from "phaser";
-import type { MenuItemId } from "../types/game";
+import type { ChapterId, MenuItemId } from "../types/game";
 import { getFoodTextureKey } from "../data/menuData";
 import { touchInput } from "../input/TouchControls";
 import type { AvatarLook } from "../systems/CustomizationSystem";
@@ -24,6 +24,8 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private carriedSprite?: Phaser.GameObjects.Image;
   private avatarLook?: AvatarLook;
   private ownerTint = 0xffffff;
+  private movementSpeedMultiplier = 1;
+  private chapterId: ChapterId = 1;
 
   public constructor(scene: Phaser.Scene, x: number, y: number) {
     super(scene, x, y, "player-down-0");
@@ -70,8 +72,9 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
     if (directionX !== 0 || directionY !== 0) {
       const directionScale = directionX !== 0 && directionY !== 0 ? Math.SQRT1_2 : 1;
-      const velocityX = directionX * CHARACTER_MOVE_SPEED_PX_PER_SECOND * directionScale;
-      const velocityY = directionY * CHARACTER_MOVE_SPEED_PX_PER_SECOND * directionScale;
+      const moveSpeed = CHARACTER_MOVE_SPEED_PX_PER_SECOND * this.movementSpeedMultiplier;
+      const velocityX = directionX * moveSpeed * directionScale;
+      const velocityY = directionY * moveSpeed * directionScale;
       body.setVelocity(velocityX, velocityY);
       this.updateFacing(velocityX, velocityY);
       this.animationClock += deltaMs;
@@ -150,6 +153,21 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.rebuildAvatarTextures();
   }
 
+  public setChapterTheme(chapterId: ChapterId): void {
+    this.chapterId = chapterId;
+    this.rebuildAvatarTextures();
+  }
+
+  public setMovementSpeedMultiplier(multiplier: number): void {
+    this.movementSpeedMultiplier = Number.isFinite(multiplier)
+      ? Math.max(1, multiplier)
+      : 1;
+  }
+
+  public getMovementSpeedMultiplier(): number {
+    return this.movementSpeedMultiplier;
+  }
+
   public override destroy(fromScene?: boolean): void {
     this.carriedSprite?.destroy();
     super.destroy(fromScene);
@@ -179,7 +197,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private rebuildAvatarTextures(): void {
     const look = this.avatarLook;
     if (look === undefined) return;
-    ensureCustomizedPlayerTextures(this.scene, look, this.ownerTint);
+    ensureCustomizedPlayerTextures(this.scene, look, this.ownerTint, this.chapterId);
     this.setTexture(this.getPlayerTextureKey());
   }
 
@@ -190,6 +208,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       this.ownerTint,
       this.facing,
       this.animationFrame,
+      this.chapterId,
     );
   }
 }

@@ -6,6 +6,7 @@ import { PixelButton } from "../../ui/PixelButton";
 import { configureHighDefinitionScene } from "../art/Presentation";
 import { touchInput } from "../input/TouchControls";
 import { getChapter } from "../data/chapterData";
+import { formatCurrency } from "../economy/economyMath";
 
 export class MenuScene extends Phaser.Scene {
   private readonly saveSystem = new SaveSystem();
@@ -23,6 +24,8 @@ export class MenuScene extends Phaser.Scene {
     const reducedMotion = save?.settings.reducedMotion
       || window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
     const chapter = getChapter(save?.progression.chapterId ?? 1);
+    document.body.dataset.gamePhase = "night";
+    document.body.dataset.gameChapter = String(chapter.id);
     createMenuBackdrop(this, reducedMotion, chapter.id);
     this.effects = SoundManager.forRegistry(this.registry, save?.settings ?? false);
     this.effects.setMusicPaused(false);
@@ -106,7 +109,7 @@ export class MenuScene extends Phaser.Scene {
         { width: 112, height: 22, primary: false, fontSize: 8 },
       ).setDepth(40);
       this.add
-        .text(468, 260, `${save.customerCount}명 · ${save.money.toLocaleString("ko-KR")}냥`, {
+        .text(468, 260, `${save.customerCount}명 · ${formatCurrency(save.money)}`, {
           fontFamily: UI_FONT,
           fontSize: "7px",
           color: "#697596",

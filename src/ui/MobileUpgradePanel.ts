@@ -38,7 +38,7 @@ export class MobileUpgradePanel {
     if (view === undefined) {
       this.badge.textContent = `CHAPTER ${this.chapterId} · 30단계 완성`;
       this.name.textContent = "챕터 피날레 완성";
-      this.description.textContent = "평점 4.5를 달성하면 다음 가게가 열려요!";
+      this.description.textContent = "완성 화면의 버튼을 누르면 다음 챕터로 이동해요!";
       this.cost.textContent = "완성!";
       this.button.textContent = "완료";
       this.button.disabled = true;

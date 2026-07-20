@@ -18,8 +18,8 @@ export const ECONOMY_CONFIG: EconomyConfig = {
   worktopMaxLevel: 50,
   priceMilestoneLevels: [10, 25, 50],
   priceMilestoneMultiplier: 2,
-  cookingSpeedPerLevel: 0.9,
-  minimumCookingTimeRatio: 0.35,
+  cookingSpeedPerLevel: 0.84,
+  minimumCookingTimeRatio: 0.25,
   extraItemCookingTimeRatio: 0.65,
 };
 

@@ -166,16 +166,18 @@ function drawAvatarDetails(
   frame: number,
   look: AvatarLook,
   muzzleColor: number,
+  chapterId: ChapterId,
 ): void {
+  const chapter = getChapter(chapterId);
   const bob = frame === 1 ? 1 : 0;
   const front = direction === "down";
   const side = direction === "left" || direction === "right";
 
   if (look.apron !== "apron-none" && direction !== "up") {
     const colors: Record<Exclude<AvatarLook["apron"], "apron-none">, number> = {
-      "apron-red": 0xc94843,
-      "apron-mint": 0x5bc7ae,
-      "apron-night": 0x263b76,
+      "apron-red": chapter.secondary,
+      "apron-mint": chapter.accent,
+      "apron-night": multiplyColor(chapter.accent, 0x6f789d),
       "apron-cream": 0xffe3a8,
     };
     const color = colors[look.apron];
@@ -211,8 +213,8 @@ function drawAvatarDetails(
 
   if (look.hat === "hat-band") {
     rect(graphics, PIXEL_PALETTE.outline, 7, 7 + bob, 18, 3);
-    rect(graphics, 0xd24b46, 8, 7 + bob, 16, 2);
-    rect(graphics, 0xd24b46, direction === "left" ? 23 : 5, 8 + bob, 4, 4);
+    rect(graphics, chapter.secondary, 8, 7 + bob, 16, 2);
+    rect(graphics, chapter.secondary, direction === "left" ? 23 : 5, 8 + bob, 4, 4);
   } else if (look.hat === "hat-chef") {
     rect(graphics, PIXEL_PALETTE.outline, 9, 2 + bob, 14, 7);
     rect(graphics, PIXEL_PALETTE.warmWhite, 10, 3 + bob, 12, 6);
@@ -220,10 +222,10 @@ function drawAvatarDetails(
     rect(graphics, PIXEL_PALETTE.warmWhite, 20, 4 + bob, 5, 4);
   } else if (look.hat === "hat-moon") {
     rect(graphics, PIXEL_PALETTE.outline, 7, 4 + bob, 18, 5);
-    rect(graphics, 0x344f9b, 8, 4 + bob, 16, 4);
+    rect(graphics, chapter.accent, 8, 4 + bob, 16, 4);
     rect(graphics, PIXEL_PALETTE.goldLight, 18, 5 + bob, 3, 2);
   } else if (look.hat === "hat-flower") {
-    rect(graphics, 0xf5a6b9, direction === "left" ? 8 : 20, 5 + bob, 3, 3);
+    rect(graphics, chapter.secondary, direction === "left" ? 8 : 20, 5 + bob, 3, 3);
     rect(graphics, 0xffd8e2, direction === "left" ? 7 : 19, 6 + bob, 5, 1);
     rect(graphics, PIXEL_PALETTE.goldLight, direction === "left" ? 9 : 21, 6 + bob, 1, 1);
   }
@@ -231,12 +233,12 @@ function drawAvatarDetails(
   if (look.accessory !== "acc-none" && direction !== "up") {
     if (look.accessory === "acc-scarf") {
       rect(graphics, PIXEL_PALETTE.outline, side ? 11 : 10, 17 + bob, side ? 12 : 13, 3);
-      rect(graphics, 0xe37864, side ? 12 : 11, 17 + bob, side ? 10 : 11, 2);
-      rect(graphics, 0xf5b06b, direction === "left" ? 20 : 18, 19 + bob, 3, 5);
+      rect(graphics, chapter.secondary, side ? 12 : 11, 17 + bob, side ? 10 : 11, 2);
+      rect(graphics, chapter.accent, direction === "left" ? 20 : 18, 19 + bob, 3, 5);
     } else {
       const color = look.accessory === "acc-bell"
         ? PIXEL_PALETTE.goldLight
-        : look.accessory === "acc-fish" ? 0xf28c72 : 0x8de6db;
+        : look.accessory === "acc-fish" ? chapter.secondary : chapter.accent;
       rect(graphics, PIXEL_PALETTE.outline, side ? 12 : 15, 17 + bob, 4, 4);
       rect(graphics, color, side ? 13 : 16, 18 + bob, 2, 2);
     }
@@ -249,6 +251,7 @@ function drawCheesePlayer(
   frame: number,
   look?: AvatarLook,
   ownerTint = 0xffffff,
+  chapterId: ChapterId = 1,
 ): void {
   const palette = {
     ...PIXEL_PALETTE,
@@ -287,7 +290,7 @@ function drawCheesePlayer(
     rect(graphics, palette.outline, bodyX + 10, rightFootY, 5, 3);
     rect(graphics, palette.cream, bodyX + 3, leftFootY, 3, 2);
     rect(graphics, palette.cream, bodyX + 11, rightFootY, 3, 2);
-    if (look !== undefined) drawAvatarDetails(graphics, direction, frame, look, palette.cream);
+    if (look !== undefined) drawAvatarDetails(graphics, direction, frame, look, palette.cream, chapterId);
     return;
   }
 
@@ -323,7 +326,7 @@ function drawCheesePlayer(
   rect(graphics, palette.outline, 17, rightFootY, 6, 3);
   rect(graphics, palette.cream, 11, leftFootY, 3, 2);
   rect(graphics, palette.cream, 18, rightFootY, 3, 2);
-  if (look !== undefined) drawAvatarDetails(graphics, direction, frame, look, palette.cream);
+  if (look !== undefined) drawAvatarDetails(graphics, direction, frame, look, palette.cream, chapterId);
 }
 
 function drawChef(graphics: Graphics, frame: number, rank = 0): void {
@@ -894,8 +897,9 @@ const FACILITY_TEXTURE_IDS: readonly FacilityUpgradeId[] = [
   "chef-uniform", "server-uniform", "staff-badge", "server-shoes",
 ];
 
-function drawFacilityObject(graphics: Graphics, id: FacilityUpgradeId): void {
+function drawFacilityObject(graphics: Graphics, id: FacilityUpgradeId, chapterId: ChapterId): void {
   const p = PIXEL_PALETTE;
+  const chapter = getChapter(chapterId);
   const outline = p.outline;
   graphics.fillStyle(p.shadow, 0.28).fillEllipse(4, 24, 24, 3);
   switch (id) {
@@ -970,7 +974,7 @@ function drawFacilityObject(graphics: Graphics, id: FacilityUpgradeId): void {
       rect(graphics, p.pink, 8, 16, 7, 5); rect(graphics, p.goldLight, 18, 16, 6, 5); break;
     case "chef-uniform":
     case "server-uniform": {
-      const color = id === "chef-uniform" ? 0x8ff0df : 0xff9dcd;
+      const color = id === "chef-uniform" ? chapter.accent : chapter.secondary;
       rect(graphics, outline, 14, 2, 4, 4); rect(graphics, outline, 8, 5, 16, 19);
       rect(graphics, color, 10, 7, 12, 15); rect(graphics, outline, 4, 8, 7, 6); rect(graphics, outline, 21, 8, 7, 6);
       rect(graphics, color, 5, 9, 6, 4); rect(graphics, color, 21, 9, 6, 4); rect(graphics, p.goldLight, 15, 10, 2, 2); break;
@@ -983,11 +987,32 @@ function drawFacilityObject(graphics: Graphics, id: FacilityUpgradeId): void {
       rect(graphics, p.warmWhite, 3, 19, 13, 4); rect(graphics, outline, 17, 8, 12, 13);
       rect(graphics, 0x59cfc3, 19, 9, 8, 9); rect(graphics, p.warmWhite, 17, 18, 13, 4); break;
   }
+
+  rect(graphics, chapter.accent, 3, 25, 13, 2);
+  rect(graphics, chapter.secondary, 16, 25, 13, 2);
+  if (chapterId === 2) {
+    rect(graphics, 0x8b5738, 27, 2, 2, 7);
+    rect(graphics, chapter.accent, 23, 1, 5, 2);
+    rect(graphics, chapter.accent, 27, 0, 4, 2);
+  } else if (chapterId === 3) {
+    rect(graphics, chapter.secondary, 23, 2, 8, 2);
+    rect(graphics, chapter.accent, 25, 4, 4, 3);
+  } else if (chapterId === 4) {
+    rect(graphics, chapter.accent, 26, 1, 3, 7);
+    rect(graphics, chapter.secondary, 24, 3, 7, 3);
+  } else if (chapterId === 5) {
+    rect(graphics, chapter.secondary, 25, 1, 5, 5);
+    rect(graphics, 0xfff1d6, 26, 2, 3, 3);
+  }
 }
 
 function createFacilityTextures(painter: TexturePainter): void {
-  for (const id of FACILITY_TEXTURE_IDS) {
-    painter.paint(`facility-${id}`, 32, 28, (graphics) => drawFacilityObject(graphics, id));
+  for (const chapterId of CHAPTER_IDS) {
+    for (const id of FACILITY_TEXTURE_IDS) {
+      painter.paint(`facility-chapter-${chapterId}-${id}`, 32, 28, (graphics) => {
+        drawFacilityObject(graphics, id, chapterId);
+      });
+    }
   }
 }
 
@@ -1054,8 +1079,8 @@ export function createPixelArtTextures(scene: Phaser.Scene): void {
   }
 }
 
-function getAvatarTexturePrefix(look: AvatarLook, ownerTint: number): string {
-  return `player-custom-${ownerTint.toString(16)}-${look.eyes}-${look.hat}-${look.apron}-${look.accessory}`;
+function getAvatarTexturePrefix(look: AvatarLook, ownerTint: number, chapterId: ChapterId): string {
+  return `player-custom-${chapterId}-${ownerTint.toString(16)}-${look.eyes}-${look.hat}-${look.apron}-${look.accessory}`;
 }
 
 export function getCustomizedPlayerTextureKey(
@@ -1063,8 +1088,9 @@ export function getCustomizedPlayerTextureKey(
   ownerTint: number,
   direction: Direction,
   frame: number,
+  chapterId: ChapterId = 1,
 ): string {
-  return `${getAvatarTexturePrefix(look, ownerTint)}-${direction}-${frame}`;
+  return `${getAvatarTexturePrefix(look, ownerTint, chapterId)}-${direction}-${frame}`;
 }
 
 /** Bakes the selected face and outfit into the moving sprite, so no follower overlay can lag behind. */
@@ -1072,13 +1098,14 @@ export function ensureCustomizedPlayerTextures(
   scene: Phaser.Scene,
   look: AvatarLook,
   ownerTint: number,
+  chapterId: ChapterId = 1,
 ): void {
   const painter = createPainter(scene);
   try {
     for (const direction of ["down", "up", "left", "right"] as const) {
       for (let frame = 0; frame < 2; frame += 1) {
-        painter.paint(getCustomizedPlayerTextureKey(look, ownerTint, direction, frame), 32, 32, (graphics) => {
-          drawCheesePlayer(graphics, direction, frame, look, ownerTint);
+        painter.paint(getCustomizedPlayerTextureKey(look, ownerTint, direction, frame, chapterId), 32, 32, (graphics) => {
+          drawCheesePlayer(graphics, direction, frame, look, ownerTint, chapterId);
         });
       }
     }
