@@ -103,6 +103,14 @@ assert.deepEqual(sale, {
 const economy = new EconomySystem();
 assert.equal(economy.recordSale(100).totalAmount, 100, "display price must equal base payment");
 assert.equal(economy.getMoney(), 100, "the removed hidden x3 must not return");
+const infiniteEconomy = new EconomySystem({ money: 7 });
+infiniteEconomy.debugSetInfiniteMoney(true);
+assert.equal(infiniteEconomy.canAfford(1e100), true, "infinite test money must afford every chapter");
+assert.equal(infiniteEconomy.trySpend(1e100), true);
+assert.equal(infiniteEconomy.getMoney(), 7, "infinite test purchases must not consume the saved balance");
+assert.equal(infiniteEconomy.getState().infiniteMoney, true);
+infiniteEconomy.reset();
+assert.equal(infiniteEconomy.getState().infiniteMoney, false);
 assert.equal(new EconomySystem().recordServiceScore(1), 1.32);
 assert.equal(getWorktopUpgradeCost(100, 2), 118);
 assert.equal(getMenuPrice(100, 10), 417);
