@@ -34,6 +34,7 @@ export class CookingStation {
   private readonly progressFill: Phaser.GameObjects.Rectangle;
   private readonly readyIcon: Phaser.GameObjects.Image;
   private readonly readyCountLabel: Phaser.GameObjects.Text;
+  private readonly cookingCountLabel: Phaser.GameObjects.Text;
   private readonly slotPips: Phaser.GameObjects.Arc[];
   private readonly queue: CookingTicket[] = [];
   private readonly readyTickets: CookingTicket[] = [];
@@ -97,11 +98,23 @@ export class CookingStation {
       .setOrigin(0.5)
       .setDepth(25)
       .setVisible(false);
+    this.cookingCountLabel = scene.add
+      .text(x - 17, y - 27, "", {
+        fontFamily: '"Jua", sans-serif',
+        fontSize: "6px",
+        color: "#fff1b8",
+        backgroundColor: "#b94b3fe6",
+        padding: { x: 2, y: 0 },
+      })
+      .setOrigin(0.5)
+      .setDepth(25)
+      .setVisible(false);
     this.slotPips = [-7, 0, 7].map((offset) => scene.add
       .circle(x + offset, y - 18, 2, 0x26304b, 1)
       .setStrokeStyle(1, 0xc88e5b)
       .setDepth(20));
     this.setUnlocked(menuItemId === "fishcake");
+    this.refreshCookingDisplay();
   }
 
   public setUnlocked(unlocked: boolean): void {
@@ -110,6 +123,7 @@ export class CookingStation {
     this.label.setAlpha(unlocked ? 1 : 0.38);
     this.lockLabel.setVisible(!unlocked);
     this.slotPips.forEach((pip) => pip.setVisible(unlocked));
+    this.cookingCountLabel.setVisible(unlocked && this.activeSlots.length > 1);
   }
 
   public isUnlocked(): boolean {
@@ -134,10 +148,8 @@ export class CookingStation {
 
   public setParallelSlotCount(count: number): void {
     this.parallelSlotCount = Phaser.Math.Clamp(Math.floor(count), 1, 4);
-    this.slotPips.forEach((pip, index) => {
-      pip.setFillStyle(index < this.parallelSlotCount ? 0xffcb69 : 0x26304b, 1);
-    });
     this.sprite.setTint(this.parallelSlotCount >= 3 ? 0xffd278 : this.parallelSlotCount === 2 ? 0xffb68c : 0xffffff);
+    this.refreshCookingDisplay();
     this.startAvailableTickets();
   }
 
@@ -193,6 +205,7 @@ export class CookingStation {
     if (!completedAny) return;
     this.progressBackground.setVisible(this.activeSlots.length > 0);
     this.progressFill.setVisible(this.activeSlots.length > 0);
+    this.refreshCookingDisplay();
     this.readyIcon.setVisible(true);
     this.refreshReadyCount();
     this.scene.tweens.add({
@@ -228,6 +241,22 @@ export class CookingStation {
 
   public getQueueCount(): number {
     return this.queue.length + this.activeSlots.length;
+  }
+
+  public hasAvailableParallelSlot(): boolean {
+    return this.activeSlots.length < this.parallelSlotCount;
+  }
+
+  public assignNextWaitingChefTicket(workerId: string): CookingTicket | undefined {
+    const queueIndex = this.queue.findIndex(
+      (ticket) => ticket.cookingAgent === "chef" && ticket.chefWorkerId === undefined,
+    );
+    const ticket = this.queue[queueIndex];
+    if (queueIndex < 0 || ticket === undefined) return undefined;
+    const assignedTicket: CookingTicket = { ...ticket, chefWorkerId: workerId };
+    this.queue[queueIndex] = assignedTicket;
+    this.startAvailableTickets();
+    return assignedTicket;
   }
 
   public hasPendingPlayerTicket(): boolean {
@@ -315,6 +344,7 @@ export class CookingStation {
     }
     this.progressBackground.setVisible(this.activeSlots.length > 0);
     this.progressFill.setVisible(this.activeSlots.length > 0);
+    this.refreshCookingDisplay();
     this.startAvailableTickets();
     this.readyIcon.setVisible(this.readyTickets.length > 0);
     this.refreshReadyCount();
@@ -339,6 +369,7 @@ export class CookingStation {
       const [slot] = this.activeSlots.splice(activeIndex, 1);
       this.progressBackground.setVisible(this.activeSlots.length > 0);
       this.progressFill.setVisible(this.activeSlots.length > 0);
+      this.refreshCookingDisplay();
       this.startAvailableTickets();
       return slot?.ticket;
     }
@@ -424,7 +455,21 @@ export class CookingStation {
       this.progressFill.width = 0;
       this.progressBackground.setVisible(true);
       this.progressFill.setVisible(true);
+      this.refreshCookingDisplay();
     }
+  }
+
+  private refreshCookingDisplay(): void {
+    this.slotPips.forEach((pip, index) => {
+      const active = index < this.activeSlots.length;
+      const available = index < this.parallelSlotCount;
+      pip
+        .setFillStyle(active ? 0xff685f : available ? 0xffcb69 : 0x26304b, 1)
+        .setStrokeStyle(1, active ? 0xffe0a1 : 0xc88e5b);
+    });
+    this.cookingCountLabel
+      .setText(this.activeSlots.length > 1 ? `조리×${this.activeSlots.length}` : "")
+      .setVisible(this.unlocked && this.activeSlots.length > 1);
   }
 
   private refreshReadyCount(): void {

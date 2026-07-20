@@ -12,6 +12,10 @@ export function canStartCookingTicket(
     );
   }
 
+  if (ticket.cookingAgent === "chef" && ticket.chefWorkerId === undefined) {
+    return false;
+  }
+
   let activeChefTickets = 0;
   for (const activeTicket of activeTickets) {
     if (activeTicket.cookingAgent === "player") continue;
@@ -22,4 +26,14 @@ export function canStartCookingTicket(
     ) return false;
   }
   return activeChefTickets < Math.max(1, Math.floor(cookingSlotCount));
+}
+
+export function getMenuConcurrentChefLimit(
+  chefCount: number,
+  worktopSlotCount: number,
+): number {
+  return Math.min(
+    Math.max(0, Math.floor(chefCount)),
+    Math.max(1, Math.floor(worktopSlotCount)),
+  );
 }

@@ -72,6 +72,8 @@ Key features include:
 
 Orders taken by the owner wait at their matching worktop until the owner starts cooking them. The owner has one manual cooking slot separate from the hired chefs, so the owner can cook fishcake while a chef prepares tteokbokki. Each server independently delivers a ready dish to any compatible waiting customer.
 
+Same-dish chef concurrency is `min(hired chefs, that dish's worktop slots)`. With three chefs and a C2 fishcake worktop, two chefs cook fishcake simultaneously while the third chef can prepare another dish. Active worktops show `조리×2` or `조리×3`, and completed servings stack as separate ready dishes.
+
 ## Source Directory
 
 ```text

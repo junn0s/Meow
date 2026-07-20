@@ -26,7 +26,10 @@ import {
   selectFoodRecipient,
 } from "../src/game/systems/ServiceFlowRules";
 import { TouchInputState } from "../src/game/input/TouchControls";
-import { canStartCookingTicket } from "../src/game/systems/CookingFlowRules";
+import {
+  canStartCookingTicket,
+  getMenuConcurrentChefLimit,
+} from "../src/game/systems/CookingFlowRules";
 import { getFameBenefits } from "../src/game/systems/FameSystem";
 import { pickCustomerDataForKinds } from "../src/game/data/customerData";
 import {
@@ -129,6 +132,9 @@ const chefOneTicket = {
   chefWorkerId: "chef-1",
 };
 const chefTwoTicket = { ...chefOneTicket, customerId: "cook-b", chefWorkerId: "chef-2" };
+assert.equal(getMenuConcurrentChefLimit(3, 2), 2, "three chefs and a C2 worktop must cook two dishes together");
+assert.equal(getMenuConcurrentChefLimit(3, 3), 3, "three chefs and a C3 worktop must cook three dishes together");
+assert.equal(getMenuConcurrentChefLimit(1, 2), 1, "a second worktop slot still needs a second chef");
 assert.equal(canStartCookingTicket(chefTwoTicket, [chefOneTicket], 2), true);
 assert.equal(
   canStartCookingTicket({ ...chefOneTicket, customerId: "cook-c" }, [chefOneTicket], 2),
@@ -171,6 +177,15 @@ assert.equal(
   canStartCookingTicket(chefOneTicket, [startedPlayerTicket], 1),
   true,
   "player cooking must not consume a hired-chef cooking slot",
+);
+assert.equal(
+  canStartCookingTicket(
+    { ...chefOneTicket, customerId: "unassigned", chefWorkerId: undefined, cookingAgent: "chef" },
+    [],
+    3,
+  ),
+  false,
+  "queued chef food must wait for a real idle chef instead of cooking itself",
 );
 assert.equal(getStageConfig(6).targetDurationSeconds, 204);
 assert.equal(getStageConfig(11).targetDurationSeconds, 336);

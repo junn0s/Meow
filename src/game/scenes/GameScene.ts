@@ -460,6 +460,9 @@ export class GameScene extends Phaser.Scene {
     if (ticket.cookingAgent === "player") {
       return ticket.playerStarted === true && !playerCooking;
     }
+    if (ticket.cookingAgent === "chef" && ticket.chefWorkerId === undefined) {
+      return false;
+    }
     return activeChefCount < cookingSlotCount;
   }
 
@@ -943,7 +946,7 @@ export class GameScene extends Phaser.Scene {
     for (let serving = 1; serving <= customer.orderQuantity; serving += 1) {
       const servingChefWorkerId = serving === 1
         ? chefWorkerId
-        : this.claimExtraChefForCooking(customer, station) ?? chefWorkerId;
+        : this.claimExtraChefForCooking(customer, station);
       const ticket: CookingTicket = {
         customerId: customer.customerId,
         menuItemId: customer.orderId,
@@ -984,6 +987,7 @@ export class GameScene extends Phaser.Scene {
     customer: Customer,
     station: CookingStation,
   ): string | undefined {
+    if (!this.hasAvailableChefCookingCapacity(station)) return undefined;
     const chef = this.chefs.find((worker) => worker.sprite.visible && !worker.busy);
     if (chef === undefined) return undefined;
     chef.busy = true;
@@ -998,6 +1002,41 @@ export class GameScene extends Phaser.Scene {
       onUpdate: () => updateCharacterDepth(chef.sprite, 70),
     });
     return chef.id;
+  }
+
+  private hasAvailableChefCookingCapacity(station: CookingStation): boolean {
+    if (!station.hasAvailableParallelSlot()) return false;
+    let activeChefCount = 0;
+    for (const candidate of this.stations.values()) {
+      activeChefCount += candidate.getActiveChefCount();
+    }
+    return activeChefCount < Math.max(1, Math.floor(this.currentEffects.cookingSlotCount));
+  }
+
+  private assignChefToWaitingCooking(chef: WorkerAgent): boolean {
+    for (const station of this.stations.values()) {
+      if (!station.hasAvailableParallelSlot() || !this.hasAvailableChefCookingCapacity(station)) {
+        continue;
+      }
+      const ticket = station.assignNextWaitingChefTicket(chef.id);
+      if (ticket === undefined) continue;
+      chef.busy = true;
+      chef.assignedCustomerId = ticket.customerId;
+      chef.assignedStationId = station.menuItemId;
+      chef.sprite
+        .setTexture(`chef-${chef.ordinal}-1`)
+        .setFlipX(station.x < chef.sprite.x);
+      this.tweens.add({
+        targets: chef.sprite,
+        x: station.x,
+        y: station.y + 18,
+        duration: 220,
+        onUpdate: () => updateCharacterDepth(chef.sprite, 70),
+      });
+      this.pulseWorker(chef.sprite);
+      return true;
+    }
+    return false;
   }
 
   private updateStations(deltaMs: number): void {
@@ -1032,6 +1071,7 @@ export class GameScene extends Phaser.Scene {
   private dispatchChefOrders(): void {
     for (const chef of this.chefs) {
       if (!chef.sprite.visible || chef.busy) continue;
+      if (this.assignChefToWaitingCooking(chef)) continue;
       let customer: Customer | undefined;
       for (const candidate of this.customers.values()) {
         if (
@@ -2075,7 +2115,7 @@ export class GameScene extends Phaser.Scene {
     const title = this.add.text(240, 49, "메뉴별 조리대 확장", {
       fontFamily: UI_FONT, fontStyle: "bold", fontSize: "14px", color: "#fff0bd",
     }).setOrigin(0.5);
-    const hint = this.add.text(240, 67, "셰프 자동 조리와 사장님 직접 조리는 별도 슬롯이에요", {
+    const hint = this.add.text(240, 67, "셰프 3명 + C2 = 같은 메뉴 2개 동시 · 사장님 별도", {
       fontFamily: UI_FONT, fontSize: "7px", color: "#9eabc8",
     }).setOrigin(0.5);
     const items: Phaser.GameObjects.GameObject[] = [shade, panel, title, hint];
