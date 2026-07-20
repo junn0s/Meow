@@ -2,12 +2,14 @@ import { DEFAULT_PURCHASED_UPGRADE_IDS, UPGRADES } from "../data/upgradeData";
 import {
   createDefaultProgressionState,
   getStageConfig,
+  MAX_WORKERS_PER_ROLE,
   stageToVisualTier,
 } from "../data/progressionData";
 import { WORLD_CYCLE_MS } from "../data/visualData";
 import {
   isMenuItemId,
   isUpgradeId,
+  type ChapterId,
   type FeverState,
   type GameSettings,
   type GrowthStage,
@@ -24,9 +26,10 @@ import {
 import { INITIAL_MONEY, INITIAL_RATING, MAX_RATING } from "./EconomySystem";
 import { normalizePerformanceMode } from "./PerformanceSystem";
 
-export const SAVE_DATA_VERSION = 4;
-export const DEFAULT_SAVE_KEY = "meow-night-diner.save.v4";
+export const SAVE_DATA_VERSION = 5;
+export const DEFAULT_SAVE_KEY = "meow-night-diner.save.v5";
 export const LEGACY_SAVE_KEYS = [
+  "meow-night-diner.save.v4",
   "meow-night-diner.save.v3",
   "meow-night-diner.save.v2",
   "meow-night-diner.save.v1",
@@ -155,10 +158,10 @@ export class SaveSystem {
         stageToVisualTier(progression.currentStage),
       ),
       progression,
-      cleared:
+      cleared: progression.chapterId === 5 && (
         normalizeBoolean(data.cleared, false) ||
         (purchasedUpgradeIds.includes("moonlight-sign") &&
-          rating >= MAX_RATING),
+          rating >= MAX_RATING)),
       lastSavedAt: now,
     };
 
@@ -396,10 +399,10 @@ function normalizeUnknownSave(value: unknown, now: number): SaveData | null {
       stageToVisualTier(progression.currentStage),
     ),
     progression,
-    cleared:
+    cleared: progression.chapterId === 5 && (
       normalizeBoolean(value.cleared, false) ||
       (purchasedUpgradeIds.includes("moonlight-sign") &&
-        rating >= MAX_RATING),
+        rating >= MAX_RATING)),
     lastSavedAt,
   };
 }
@@ -438,6 +441,7 @@ function normalizeProgressionState(
 ): ProgressionState {
   const defaults = createDefaultProgressionState();
   const record = isRecord(value) ? value : {};
+  const chapterId = normalizeChapterId(record.chapterId, 1);
   const fallbackStage = Math.min(30, Math.max(1, legacyPurchasedIds.length)) as GrowthStage;
   const currentStage = normalizeGrowthStage(record.currentStage, fallbackStage);
   const menuRecords = Array.isArray(record.menuProgress) ? record.menuProgress : [];
@@ -465,6 +469,7 @@ function normalizeProgressionState(
   const feverState = normalizeFeverState(record.feverState, defaults.feverState);
 
   return {
+    chapterId,
     currentStage,
     purchasedStepCount: Math.min(
       getStageConfig(currentStage).purchaseCosts.length,
@@ -482,11 +487,22 @@ function normalizeProgressionState(
   };
 }
 
+function normalizeChapterId(value: unknown, fallback: ChapterId): ChapterId {
+  const chapter = normalizeInteger(value, fallback, 1);
+  return Math.min(5, chapter) as ChapterId;
+}
+
 function normalizeWorkerProgress(value: unknown, fallback: WorkerProgress): WorkerProgress {
   const record = isRecord(value) ? value : {};
   return {
-    chefCount: Math.min(4, normalizeInteger(record.chefCount, fallback.chefCount, 0)),
-    serverCount: Math.min(4, normalizeInteger(record.serverCount, fallback.serverCount, 0)),
+    chefCount: Math.min(
+      MAX_WORKERS_PER_ROLE,
+      normalizeInteger(record.chefCount, fallback.chefCount, 0),
+    ),
+    serverCount: Math.min(
+      MAX_WORKERS_PER_ROLE,
+      normalizeInteger(record.serverCount, fallback.serverCount, 0),
+    ),
     chefSpeedLevel: normalizeInteger(record.chefSpeedLevel, fallback.chefSpeedLevel, 0),
     serverSpeedLevel: normalizeInteger(record.serverSpeedLevel, fallback.serverSpeedLevel, 0),
   };

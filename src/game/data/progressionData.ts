@@ -3,12 +3,14 @@ import {
   GROWTH_STAGES,
   MENU_ITEM_IDS,
   type EconomyConfig,
+  type ChapterId,
   type GrowthStage,
   type MenuItemId,
   type ProgressionState,
   type StageConfig,
   type VisualTier,
 } from "../types/game";
+import { getChapter } from "./chapterData";
 
 export const ECONOMY_CONFIG: EconomyConfig = {
   worktopCostGrowth: 1.18,
@@ -20,6 +22,8 @@ export const ECONOMY_CONFIG: EconomyConfig = {
   minimumCookingTimeRatio: 0.35,
   extraItemCookingTimeRatio: 0.65,
 };
+
+export const MAX_WORKERS_PER_ROLE = 5;
 
 export interface MenuProgressionConfig {
   readonly menuItemId: MenuItemId;
@@ -33,7 +37,7 @@ export interface MenuProgressionConfig {
 
 export interface WorkerHireConfig {
   readonly role: "chef" | "server";
-  readonly ordinal: 1 | 2 | 3 | 4;
+  readonly ordinal: 1 | 2 | 3 | 4 | 5;
   readonly unlockStage: GrowthStage;
   readonly cost: number;
   readonly actionTimeMs: number;
@@ -48,15 +52,30 @@ export const MENU_PROGRESSION_CONFIGS: readonly MenuProgressionConfig[] = [
   { menuItemId: "moonlight-set", name: "달빛 정식", unlockStage: 26, basePrice: 1_000_000_000, baseCookingTimeMs: 20_000, initialOrderWeight: 0.18, matureOrderWeight: 0.3 },
 ];
 
+export function getMenuProgressionConfigs(chapterId: ChapterId): readonly MenuProgressionConfig[] {
+  const chapter = getChapter(chapterId);
+  return MENU_PROGRESSION_CONFIGS.map((config) => {
+    const menu = chapter.menus[config.menuItemId];
+    return {
+      ...config,
+      name: menu.name,
+      basePrice: menu.price,
+      baseCookingTimeMs: menu.cookingTimeMs,
+    };
+  });
+}
+
 export const WORKER_HIRE_CONFIGS: readonly WorkerHireConfig[] = [
   { role: "chef", ordinal: 1, unlockStage: 4, cost: 762, actionTimeMs: 950 },
   { role: "chef", ordinal: 2, unlockStage: 12, cost: 340_000, actionTimeMs: 850 },
   { role: "chef", ordinal: 3, unlockStage: 19, cost: 33_400_000, actionTimeMs: 650 },
   { role: "chef", ordinal: 4, unlockStage: 27, cost: 8_260_000_000, actionTimeMs: 500 },
+  { role: "chef", ordinal: 5, unlockStage: 29, cost: 19_200_000_000, actionTimeMs: 500 },
   { role: "server", ordinal: 1, unlockStage: 7, cost: 10_000, actionTimeMs: 4_200 },
   { role: "server", ordinal: 2, unlockStage: 14, cost: 1_120_000, actionTimeMs: 4_300 },
   { role: "server", ordinal: 3, unlockStage: 22, cost: 284_000_000, actionTimeMs: 3_900 },
   { role: "server", ordinal: 4, unlockStage: 28, cost: 18_100_000_000, actionTimeMs: 3_600 },
+  { role: "server", ordinal: 5, unlockStage: 29, cost: 19_200_000_000, actionTimeMs: 3_600 },
 ];
 
 const PRESSURE_BANDS = [
@@ -94,20 +113,30 @@ export const TOTAL_TARGET_ACTIVE_SECONDS = STAGE_CONFIGS.reduce(
   0,
 );
 
-export function getStageConfig(stage: GrowthStage): StageConfig {
+export function getStageConfig(stage: GrowthStage, chapterId: ChapterId = 1): StageConfig {
   const config = STAGE_CONFIGS[stage - 1];
   if (config === undefined) {
     throw new RangeError(`Unknown growth stage: ${stage}`);
   }
-  return config;
+  if (chapterId === 1) return config;
+  const scale = getChapter(chapterId).economyScale;
+  return {
+    ...config,
+    keyUpgrade: `${getChapter(chapterId).shortTitle} · ${config.keyUpgrade}`,
+    startRevenuePerSecond: Math.round(config.startRevenuePerSecond * scale),
+    exitRevenuePerSecond: Math.round(config.exitRevenuePerSecond * scale),
+    totalBudget: Math.round(config.totalBudget * scale),
+    purchaseCosts: config.purchaseCosts.map((cost) => Math.round(cost * scale)),
+  };
 }
 
 export function stageToVisualTier(stage: GrowthStage): VisualTier {
   return getStageConfig(stage).visualTier;
 }
 
-export function createDefaultProgressionState(): ProgressionState {
+export function createDefaultProgressionState(chapterId: ChapterId = 1): ProgressionState {
   return {
+    chapterId,
     currentStage: 1,
     purchasedStepCount: 0,
     menuProgress: MENU_ITEM_IDS.map((menuItemId, index) => ({

@@ -1,4 +1,5 @@
 import Phaser from "phaser";
+import { getFoodTextureKey } from "../data/menuData";
 import { getCustomerData } from "../data/customerData";
 import { CustomerState, type CustomerKind, type MenuItemId } from "../types/game";
 
@@ -210,7 +211,7 @@ export class Customer extends Phaser.GameObjects.Container {
       this.patienceMs = normalizedPatience;
     }
     this.bubble.setVisible(true);
-    this.foodIcon.setTexture(`food-${menuItemId}`).setVisible(true);
+    this.foodIcon.setTexture(getFoodTextureKey(menuItemId)).setVisible(true);
     this.updateQuantityLabel();
     this.setCustomerState(CustomerState.ORDERING);
   }

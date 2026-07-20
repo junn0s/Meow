@@ -1,4 +1,6 @@
 import Phaser from "phaser";
+import { getMenuItem } from "../game/data/menuData";
+import { getChapter } from "../game/data/chapterData";
 import { formatCurrency } from "../game/economy/economyMath";
 import type {
   ProgressionPurchaseView,
@@ -28,14 +30,14 @@ export class UpgradePanel {
     scene.add.rectangle(415, 135, 130, 270, 0x12172c, 0.99).setDepth(depth);
     scene.add.rectangle(351, 135, 2, 270, 0xd47a43, 0.9).setDepth(depth + 1);
     scene.add
-      .text(363, 9, "30단계 달빛 여정", {
+      .text(363, 9, "5개 챕터 · 150단계", {
         fontFamily: '"Jua", "Gowun Dodum", sans-serif',
         fontSize: "11px",
         color: "#ffe0a1",
       })
       .setDepth(depth + 2);
     scene.add
-      .text(363, 25, "한 단계씩 포차를 키워요", {
+      .text(363, 25, "새 가게를 하나씩 완성해요", {
         fontFamily: '"Gowun Dodum", sans-serif',
         fontSize: "7px",
         color: "#8f9abc",
@@ -131,7 +133,7 @@ export class UpgradePanel {
       .setOrigin(0.5, 0)
       .setDepth(depth + 2);
     this.levelText = scene.add
-      .text(415, 257, "가격 Lv.1 · 속도 Lv.0", {
+      .text(415, 257, "현재 메뉴 · 어묵", {
         fontFamily: '"Gowun Dodum", sans-serif',
         fontSize: "7px",
         color: "#697494",
@@ -150,19 +152,20 @@ export class UpgradePanel {
   ): void {
     this.currentView = view;
     const progress = Phaser.Math.Clamp(view?.overallProgress ?? 1, 0, 1);
-    const fameLevel = view?.chapter ?? 6;
+    const fameLevel = view?.visualTier ?? 6;
     this.fameText.setText(`명성 Lv.${fameLevel} · 결제 +${(fameLevel - 1) * 2}%`);
     this.progressFill.width = 102 * progress;
     const activeMenu = [...state.menuProgress].reverse().find((menu) => menu.unlocked)
       ?? state.menuProgress[0];
     this.levelText.setText(
-      `가격 Lv.${activeMenu?.priceLevel ?? 1} · 속도 Lv.${activeMenu?.speedLevel ?? 0}`,
+      `현재 메뉴 · ${activeMenu === undefined ? "어묵" : getMenuItem(activeMenu.menuItemId).name}`,
     );
 
     if (view === undefined) {
-      this.badgeText.setText("30단계 완성");
-      this.nameText.setText("달빛 야식당");
-      this.descriptionText.setText("동네에서 가장 따뜻한 야식당이 되었어요!");
+      const chapter = getChapter(state.chapterId);
+      this.badgeText.setText(`CHAPTER ${chapter.id} · 30단계 완성`);
+      this.nameText.setText(chapter.finaleName);
+      this.descriptionText.setText("평점 4.5를 달성하면 다음 가게가 열려요!");
       this.costText.setText("완성!").setColor("#ffe58a");
       this.button.disableInteractive().setFillStyle(0x39415d).setAlpha(0.7);
       this.buttonText.setText("완료").setColor("#aab4cf");
@@ -171,7 +174,7 @@ export class UpgradePanel {
     }
 
     const purchase = view.purchase;
-    this.badgeText.setText(`${view.chapter}장 · ${purchase.stage}단계`);
+    this.badgeText.setText(`CH.${view.chapterId} · ${purchase.stage}단계`);
     this.nameText.setText(purchase.name);
     this.descriptionText.setText(purchase.description);
     this.costText

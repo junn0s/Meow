@@ -1,10 +1,11 @@
 import Phaser from "phaser";
 import {
   VISUAL_CROSSFADE_MS,
-  VISUAL_PALETTES,
+  CHAPTER_VISUAL_PALETTES,
   type VisualPalette,
 } from "../data/visualData";
-import type { GrowthStage, VisualPhase, VisualTier } from "../types/game";
+import type { ChapterId, GrowthStage, VisualPhase, VisualTier } from "../types/game";
+import { getChapter } from "../data/chapterData";
 
 export const UI_FONT = '"Apple SD Gothic Neo", "Noto Sans KR", system-ui, sans-serif';
 
@@ -20,32 +21,52 @@ export interface DinerDecor {
   celebrate(): void;
 }
 
-export function createGameBackdrop(scene: Phaser.Scene): DinerDecor {
+export function createGameBackdrop(scene: Phaser.Scene, chapterId: ChapterId = 1): DinerDecor {
+  const chapter = getChapter(chapterId);
   const phases: readonly VisualPhase[] = ["day", "sunset", "night", "dawn"];
   const layers = new Map<VisualPhase, Phaser.GameObjects.Graphics>();
   for (const phase of phases) {
-    const layer = drawGameBackdropLayer(scene, VISUAL_PALETTES[phase]);
+    const layer = drawGameBackdropLayer(scene, CHAPTER_VISUAL_PALETTES[chapterId][phase], chapterId);
     layer.setAlpha(phase === "night" ? 1 : 0);
     layers.set(phase, layer);
   }
 
   const neonDetails = scene.add.graphics().setDepth(7);
-  neonDetails.fillStyle(0x38d7ff, 0.95);
+  neonDetails.fillStyle(chapter.accent, 0.95);
   neonDetails.fillRect(12, 60, 42, 2);
   neonDetails.fillRect(296, 60, 42, 2);
   neonDetails.fillStyle(0x5d73ff, 0.8);
   neonDetails.fillRect(112, 63, 2, 42);
   neonDetails.fillRect(236, 63, 2, 42);
-  neonDetails.fillStyle(0xf15bd1, 0.75);
+  neonDetails.fillStyle(chapter.secondary, 0.75);
   neonDetails.fillRect(136, 104, 78, 2);
 
   let currentPhase: VisualPhase = "night";
   let visualTier: VisualTier = 1;
   let currentStage: GrowthStage = 1;
   let purchasedStepCount = 0;
-  let shopTier = 0;
   let shopFacilities = new Set<string>();
   const facilityDetails = scene.add.graphics().setDepth(6);
+  const facilityPlacements = [
+    ["copper-pot", 26, 88, 0.72, 16], ["double-burner", 66, 89, 0.72, 16],
+    ["prep-rack", 108, 82, 0.72, 15], ["steam-hood", 150, 78, 0.78, 15],
+    ["soft-chair", 50, 205, 0.82, 44], ["wide-table", 97, 207, 0.9, 43],
+    ["moon-counter", 326, 91, 0.82, 16], ["tea-dispenser", 285, 91, 0.72, 16],
+    ["paper-lantern", 18, 72, 0.7, 10], ["blue-canopy", 63, 68, 0.72, 9],
+    ["neon-set", 174, 48, 0.82, 9], ["moon-sign", 221, 48, 0.72, 9],
+    ["wind-chime", 310, 69, 0.66, 10], ["lucky-cat", 327, 178, 0.78, 40],
+    ["festival-drum", 222, 204, 0.78, 42], ["night-ledger", 252, 87, 0.68, 16],
+    ["coupon-board", 35, 112, 0.7, 15], ["chef-uniform", 258, 181, 0.72, 38],
+    ["server-uniform", 285, 181, 0.72, 38], ["staff-badge", 308, 180, 0.62, 39],
+    ["server-shoes", 251, 207, 0.68, 43],
+  ] as const;
+  const facilityObjects = new Map<string, Phaser.GameObjects.Image>();
+  for (const [id, x, y, scale, depth] of facilityPlacements) {
+    facilityObjects.set(
+      id,
+      scene.add.image(x, y, `facility-${id}`).setScale(scale).setDepth(depth).setVisible(false),
+    );
+  }
 
   const renderFacilityDetails = (): void => {
     facilityDetails.clear();
@@ -91,73 +112,9 @@ export function createGameBackdrop(scene: Phaser.Scene): DinerDecor {
       facilityDetails.fillCircle(147, 49, 2);
       facilityDetails.fillCircle(203, 49, 2);
     }
-    if (shopTier >= 1) {
-      facilityDetails.fillStyle(0xd78345, 0.95).fillCircle(31, 91, 5);
-    }
-    if (shopTier >= 2) {
-      facilityDetails.fillStyle(0x8f5d79, 0.9).fillRect(106, 190, 28, 3);
-    }
-    if (shopTier >= 3) {
-      facilityDetails.fillStyle(0xc88b55, 0.95).fillRect(150, 181, 50, 4);
-    }
-    if (shopTier >= 4) {
-      facilityDetails.lineStyle(2, night ? 0x45ffd2 : 0xe5ad68, 0.95).strokeRoundedRect(287, 68, 47, 18, 4);
-    }
-    if (shopFacilities.has("copper-pot")) {
-      facilityDetails.fillStyle(0x5b332d, 1).fillCircle(31, 91, 7);
-      facilityDetails.fillStyle(0xd78345, 1).fillCircle(31, 90, 5);
-      facilityDetails.fillStyle(0xffbe6b, 0.9).fillRect(27, 88, 8, 2);
-    }
-    if (shopFacilities.has("double-burner")) {
-      facilityDetails.lineStyle(2, 0xff8c50, 0.9).strokeCircle(79, 91, 5).strokeCircle(93, 91, 5);
-    }
-    if (shopFacilities.has("prep-rack")) {
-      facilityDetails.fillStyle(0x8ca0aa, 0.9).fillRect(122, 65, 34, 2).fillRect(122, 72, 34, 2);
-    }
-    if (shopFacilities.has("soft-chair")) {
-      facilityDetails.fillStyle(0xa05d78, 0.95).fillRect(106, 188, 28, 5);
-    }
-    if (shopFacilities.has("wide-table")) {
-      facilityDetails.fillStyle(0xc88b55, 0.95).fillRect(150, 180, 50, 5);
-      facilityDetails.fillStyle(0x70402f, 1).fillRect(154, 185, 3, 8).fillRect(193, 185, 3, 8);
-    }
-    if (shopFacilities.has("moon-counter")) {
-      facilityDetails.fillStyle(0x384465, 1).fillRect(287, 68, 47, 18);
-      facilityDetails.lineStyle(2, night ? 0x45ffd2 : 0xe5ad68, 0.95).strokeRoundedRect(287, 68, 47, 18, 4);
-    }
-    if (shopFacilities.has("paper-lantern")) {
-      facilityDetails.fillStyle(night ? 0x55dbe3 : 0xf4b45f, 0.95).fillRect(15, 68, 7, 11).fillRect(328, 68, 7, 11);
-    }
-    if (shopFacilities.has("blue-canopy")) {
-      facilityDetails.fillStyle(night ? 0x315a91 : 0x4f87b8, 0.9).fillRect(5, 62, 340, 3);
-      for (let x = 8; x < 345; x += 24) facilityDetails.fillTriangle(x, 65, x + 20, 65, x + 10, 72);
-    }
-    if (shopFacilities.has("neon-set")) {
-      facilityDetails.lineStyle(2, night ? 0xf15bd1 : 0xdd776d, 0.95).strokeRoundedRect(139, 38, 72, 21, 5);
-    }
-    if (shopFacilities.has("moon-sign")) {
-      facilityDetails.fillStyle(0xffdf71, 0.95).fillCircle(214, 45, 6);
-      facilityDetails.fillStyle(night ? 0x171b35 : 0x8cc9d0, 1).fillCircle(217, 43, 6);
-    }
-    if (shopFacilities.has("lucky-cat")) {
-      facilityDetails.fillStyle(0xffe6b7, 1).fillRect(319, 171, 8, 11);
-      facilityDetails.fillStyle(0xd85c3e, 1).fillRect(321, 177, 4, 2);
-    }
-    if (shopFacilities.has("festival-drum")) {
-      facilityDetails.fillStyle(0x7a3438, 1).fillCircle(224, 188, 8);
-      facilityDetails.lineStyle(2, 0xffd45c, 1).strokeCircle(224, 188, 6);
-    }
-    if (shopFacilities.has("night-ledger")) {
-      facilityDetails.fillStyle(0x263b76, 1).fillRect(299, 91, 14, 10);
-      facilityDetails.fillStyle(0xffd45c, 1).fillRect(302, 94, 8, 1).fillRect(302, 97, 6, 1);
-    }
-    if (shopFacilities.has("chef-uniform") || shopFacilities.has("server-uniform")) {
-      facilityDetails.fillStyle(0x6e4a35, 1).fillRect(255, 171, 30, 2);
-      if (shopFacilities.has("chef-uniform")) facilityDetails.fillStyle(0x8ff0df, 1).fillRect(258, 173, 9, 11);
-      if (shopFacilities.has("server-uniform")) facilityDetails.fillStyle(0xff9dcd, 1).fillRect(273, 173, 9, 11);
-    }
-    if (shopFacilities.has("staff-badge")) {
-      facilityDetails.fillStyle(0xffdf71, 1).fillRect(269, 168, 3, 3);
+    for (const [id, image] of facilityObjects) {
+      image.setVisible(shopFacilities.has(id));
+      image.setAlpha(night && ["paper-lantern", "neon-set", "moon-sign"].includes(id) ? 1 : 0.92);
     }
   };
 
@@ -177,7 +134,15 @@ export function createGameBackdrop(scene: Phaser.Scene): DinerDecor {
     }
   };
 
-  const sign = scene.add.image(175, 49, "sign-stall").setDepth(8).setScale(0.88);
+  const sign = scene.add.image(175, 49, `sign-chapter-${chapterId}-stall`).setDepth(8).setScale(0.88);
+  scene.add.text(175, 50, chapter.shortTitle, {
+    fontFamily: UI_FONT,
+    fontStyle: "bold",
+    fontSize: chapterId === 2 || chapterId === 4 ? "6px" : "7px",
+    color: "#fff4d4",
+    stroke: "#15172a",
+    strokeThickness: 2,
+  }).setOrigin(0.5).setDepth(9);
   const steam = [
     scene.add.image(62, 50, "steam-0"),
     scene.add.image(171, 50, "steam-1"),
@@ -198,7 +163,7 @@ export function createGameBackdrop(scene: Phaser.Scene): DinerDecor {
   return {
     sign,
     setSign(level): void {
-      sign.setTexture(`sign-${level}`);
+      sign.setTexture(`sign-chapter-${chapterId}-${level}`);
       scene.tweens.add({ targets: sign, scaleX: 1.08, scaleY: 1.08, duration: 160, yoyo: true });
     },
     setPhase(phase, immediate = false): void {
@@ -225,10 +190,7 @@ export function createGameBackdrop(scene: Phaser.Scene): DinerDecor {
       purchasedStepCount = steps;
       renderFacilityDetails();
     },
-    setShopTier(tier): void {
-      shopTier = Math.max(0, Math.min(4, Math.floor(tier)));
-      renderFacilityDetails();
-    },
+    setShopTier(_tier): void { renderFacilityDetails(); },
     setShopFacilities(facilityIds): void {
       shopFacilities = new Set(facilityIds);
       renderFacilityDetails();
@@ -263,6 +225,7 @@ export function createGameBackdrop(scene: Phaser.Scene): DinerDecor {
 function drawGameBackdropLayer(
   scene: Phaser.Scene,
   palette: VisualPalette,
+  chapterId: ChapterId,
 ): Phaser.GameObjects.Graphics {
   const graphics = scene.add.graphics().setDepth(-50);
   graphics.fillGradientStyle(
@@ -292,6 +255,8 @@ function drawGameBackdropLayer(
   graphics.fillRect(145, 225, 54, 42);
   graphics.fillStyle(palette.accent, 0.13);
   graphics.fillRect(268, 225, 54, 42);
+
+  drawChapterMapMotif(graphics, chapterId, palette);
 
   graphics.fillStyle(0x452936, 1);
   graphics.fillRect(4, 37, 5, 190);
@@ -336,14 +301,57 @@ function drawGameBackdropLayer(
   return graphics;
 }
 
+function drawChapterMapMotif(graphics: Phaser.GameObjects.Graphics, chapterId: ChapterId, palette: VisualPalette): void {
+  if (chapterId === 1) return;
+  if (chapterId === 2) {
+    graphics.fillStyle(0x2d8298, 0.9).fillRect(0, 103, 350, 13);
+    graphics.fillStyle(0x78d8d2, 0.7).fillRect(0, 104, 350, 2);
+    graphics.fillStyle(0xe2c58c, 0.22);
+    for (let x = 8; x < 350; x += 24) graphics.fillCircle(x, 242 + (x % 3), 2);
+    graphics.fillStyle(0x315944, 1).fillRect(33, 55, 4, 52);
+    for (const [x, y] of [[19, 57], [25, 51], [34, 49], [44, 52], [51, 59]] as const) {
+      graphics.fillStyle(0x3d936d, 1).fillTriangle(35, 58, x, y, x + 7, y + 10);
+    }
+  } else if (chapterId === 3) {
+    graphics.fillStyle(0x302822, 1).fillTriangle(0, 89, 65, 53, 130, 89);
+    graphics.fillTriangle(220, 89, 285, 53, 350, 89);
+    graphics.lineStyle(2, palette.accent, 0.55);
+    for (let x = 18; x < 340; x += 34) graphics.strokeRect(x, 128, 24, 29);
+  } else if (chapterId === 4) {
+    graphics.fillStyle(0x211d2b, 0.9);
+    for (let x = 15; x < 340; x += 54) {
+      graphics.fillRect(x, 65, 34, 46);
+      graphics.lineStyle(2, palette.accent, 0.65).strokeRoundedRect(x + 3, 68, 28, 40, 7);
+    }
+    graphics.fillStyle(0xffffff, 0.05);
+    for (let y = 118; y < 270; y += 16) for (let x = (y / 16) % 2 === 0 ? 0 : 16; x < 350; x += 32) graphics.fillRect(x, y, 16, 16);
+  } else {
+    graphics.fillStyle(0xe7dfcf, 0.16);
+    for (let x = 14; x < 340; x += 42) {
+      graphics.fillRect(x, 62, 32, 47);
+      graphics.lineStyle(1, 0x24364a, 0.8).strokeRect(x, 62, 32, 47);
+      graphics.lineBetween(x + 16, 62, x + 16, 109);
+      graphics.lineBetween(x, 85, x + 32, 85);
+    }
+    graphics.fillStyle(0x9a6544, 0.45).fillRect(0, 209, 350, 5);
+    for (let x = 0; x < 350; x += 28) graphics.fillStyle(0xd9b77e, 0.08).fillRect(x, 116, 1, 154);
+  }
+}
+
 export function createMenuBackdrop(
   scene: Phaser.Scene,
   reducedMotion = typeof window !== "undefined"
     && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true,
+  chapterId: ChapterId = 1,
 ): void {
   const graphics = scene.add.graphics().setDepth(-20);
   graphics.fillStyle(0x0b1026, 1);
   graphics.fillRect(0, 0, 480, 270);
+  if (chapterId !== 1) {
+    const palette = CHAPTER_VISUAL_PALETTES[chapterId].night;
+    graphics.fillStyle(palette.skyTop, 0.78).fillRect(0, 0, 480, 105);
+    graphics.fillStyle(palette.street, 0.72).fillRect(0, 176, 480, 94);
+  }
 
   // Layered midnight skyline.
   graphics.fillStyle(0x171d39, 1);
@@ -409,6 +417,14 @@ export function createMenuBackdrop(
   graphics.fillRect(105, 191, 271, 9);
   graphics.fillStyle(0x76432f, 1);
   graphics.fillRect(105, 200, 271, 9);
+
+  if (chapterId !== 1) {
+    const palette = CHAPTER_VISUAL_PALETTES[chapterId].night;
+    graphics.fillStyle(palette.building, 0.22).fillRect(0, 92, 480, 84);
+    graphics.fillStyle(palette.street, 0.32).fillRect(0, 176, 480, 94);
+    graphics.fillStyle(palette.canopy, 0.82).fillRect(96, 104, 288, 11);
+    graphics.lineStyle(2, palette.accent, 0.7).strokeRoundedRect(113, 132, 255, 64, 4);
+  }
 
   createRain(scene, new Phaser.Geom.Rectangle(0, 0, 480, 270), 10, reducedMotion ? 12 : 34);
 }

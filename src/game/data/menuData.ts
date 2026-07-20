@@ -1,50 +1,28 @@
-import type { MenuItem, MenuItemId } from "../types/game";
+import { CHAPTERS } from "./chapterData";
+import type { ChapterId, MenuItem, MenuItemId } from "../types/game";
 
-export const MENU_ITEMS = [
-  {
-    id: "fishcake",
-    name: "어묵",
-    cookingTimeMs: 4_000,
-    price: 18,
-  },
-  {
-    id: "tteokbokki",
-    name: "떡볶이",
-    cookingTimeMs: 7_000,
-    price: 630,
-  },
-  {
-    id: "fish-bread",
-    name: "순대",
-    cookingTimeMs: 10_000,
-    price: 22_000,
-  },
-  {
-    id: "ramen",
-    name: "야식 라면",
-    cookingTimeMs: 13_000,
-    price: 790_000,
-  },
-  {
-    id: "moon-skewer",
-    name: "달빛 꼬치",
-    cookingTimeMs: 16_000,
-    price: 28_000_000,
-  },
-  {
-    id: "moonlight-set",
-    name: "달빛 정식",
-    cookingTimeMs: 20_000,
-    price: 1_000_000_000,
-  },
-] as const satisfies readonly MenuItem[];
+let activeChapterId: ChapterId = 1;
 
-export function getMenuItem(menuItemId: MenuItemId): MenuItem {
-  const menuItem = MENU_ITEMS.find(({ id }) => id === menuItemId);
+export const MENU_ITEMS = Object.values(CHAPTERS[1].menus) as readonly MenuItem[];
 
-  if (menuItem === undefined) {
-    throw new Error(`Unknown menu item: ${menuItemId}`);
-  }
+export function setActiveMenuChapter(chapterId: ChapterId): void {
+  activeChapterId = chapterId;
+}
 
+export function getActiveMenuChapter(): ChapterId {
+  return activeChapterId;
+}
+
+export function getMenuItem(menuItemId: MenuItemId, chapterId = activeChapterId): MenuItem {
+  const menuItem = CHAPTERS[chapterId].menus[menuItemId];
+  if (menuItem === undefined) throw new Error(`Unknown menu item: ${menuItemId}`);
   return menuItem;
+}
+
+export function getFoodTextureKey(menuItemId: MenuItemId, chapterId = activeChapterId): string {
+  return chapterId === 1 ? `food-${menuItemId}` : `food-chapter-${chapterId}-${menuItemId}`;
+}
+
+export function getStationTextureKey(menuItemId: MenuItemId, chapterId = activeChapterId): string {
+  return chapterId === 1 ? `station-${menuItemId}` : `station-chapter-${chapterId}-${menuItemId}`;
 }

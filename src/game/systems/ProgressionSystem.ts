@@ -1,15 +1,18 @@
 import {
   createDefaultProgressionState,
   getStageConfig,
-  MENU_PROGRESSION_CONFIGS,
+  getMenuProgressionConfigs,
+  MAX_WORKERS_PER_ROLE,
   stageToVisualTier,
   STAGE_CONFIGS,
 } from "../data/progressionData";
+import { getChapter, getNextChapterId } from "../data/chapterData";
 import {
   getCookingTimeMs,
   getMenuPrice as calculateMenuPrice,
 } from "../economy/economyMath";
 import {
+  type ChapterId,
   type FeverState,
   type GrowthStage,
   type MenuItemId,
@@ -23,6 +26,10 @@ import {
   type WorkerProgress,
 } from "../types/game";
 import { EconomySystem } from "./EconomySystem";
+import {
+  applyMenuPortfolioPriceFloor,
+  getSharedMenuPriceLevelGain,
+} from "./MenuPriceProgressionRules";
 
 export const PROGRESSION_CLEAR_RATING = 4.5;
 
@@ -35,11 +42,11 @@ const FEVER_TIP_CHANCE_BONUSES = [0, 0.08, 0.12, 0.18] as const;
 const NO_FEVER_TRANSITION = Object.freeze({ activated: false, ended: false });
 
 const GENERIC_EFFECTS = [
-  { effect: "menu_price", name: "주력 메뉴 가격 I", description: "표시 단가를 올려 주문 한 건의 가치를 키웁니다." },
-  { effect: "menu_speed", name: "조리대 속도", description: "주력 메뉴 조리시간을 10% 단축합니다." },
-  { effect: "menu_price", name: "주력 메뉴 가격 II", description: "재료를 개선해 표시 단가를 한 단계 올립니다." },
-  { effect: "service_flow", name: "포차 동선 정비", description: "주문·조리 동선과 회전 효율을 같이 개선합니다." },
-  { effect: "decor", name: "포차 꾸미기", description: "가게 외형을 키우고 메뉴 명성 효과를 올립니다." },
+  { effect: "menu_price", name: "모든 메뉴 판매가격 상승", description: "해금한 모든 메뉴의 판매가격이 함께 올라갑니다." },
+  { effect: "menu_speed", name: "주력 메뉴 조리시간 10% 단축", description: "현재 주력 메뉴가 10% 더 빨리 완성됩니다." },
+  { effect: "menu_price", name: "모든 메뉴 판매가격 상승", description: "싼 메뉴를 포함한 모든 메뉴의 판매가격이 함께 올라갑니다." },
+  { effect: "service_flow", name: "직원 작업시간 2% 단축", description: "셰프의 주문 접수와 알바의 서빙 준비가 2% 빨라집니다." },
+  { effect: "decor", name: "가게 외형 성장 + 메뉴값 상승", description: "가게가 꾸며지고 모든 메뉴의 판매가격도 함께 올라갑니다." },
 ] as const;
 
 const MENU_SPECIALS = new Map<GrowthStage, { menuItemId: MenuItemId; multiplier: number }>([
@@ -82,6 +89,10 @@ export class ProgressionSystem {
     return this.state.currentStage;
   }
 
+  public getChapterId(): ChapterId {
+    return this.state.chapterId;
+  }
+
   public getVisualTier(): VisualTier {
     return stageToVisualTier(this.state.currentStage);
   }
@@ -92,12 +103,15 @@ export class ProgressionSystem {
     }
     const purchase = buildPurchase(this.state);
     const canAfford = this.economy.canAfford(purchase.cost);
+    const chapterProgress = getOverallProgress(this.state);
     return {
       purchase,
       canAfford,
       canPurchase: canAfford,
-      chapter: stageToVisualTier(this.state.currentStage),
-      overallProgress: getOverallProgress(this.state),
+      chapterId: this.state.chapterId,
+      visualTier: stageToVisualTier(this.state.currentStage),
+      overallProgress: chapterProgress,
+      worldProgress: ((this.state.chapterId - 1) + chapterProgress) / 5,
     };
   }
 
@@ -142,6 +156,14 @@ export class ProgressionSystem {
       customerSpawnIntervalMultiplier: 1,
       chefCount: this.state.workerProgress.chefCount,
       serverCount: this.state.workerProgress.serverCount,
+      chefActionTimeMultiplier: Math.max(
+        0.55,
+        0.98 ** this.state.workerProgress.chefSpeedLevel,
+      ),
+      serverActionTimeMultiplier: Math.max(
+        0.55,
+        0.98 ** this.state.workerProgress.serverSpeedLevel,
+      ),
       cookingSlotCount: Math.max(1, this.state.workerProgress.chefCount),
       chefHired: this.state.workerProgress.chefCount > 0,
       serverHired: this.state.workerProgress.serverCount > 0,
@@ -155,21 +177,35 @@ export class ProgressionSystem {
   }
 
   public getMenuPrice(menuItemId: MenuItemId): number {
-    const config = MENU_PROGRESSION_CONFIGS.find((menu) => menu.menuItemId === menuItemId);
+    const configs = getMenuProgressionConfigs(this.state.chapterId);
+    const config = configs.find((menu) => menu.menuItemId === menuItemId);
     const progress = this.state.menuProgress.find((menu) => menu.menuItemId === menuItemId);
     if (config === undefined || progress === undefined) {
       throw new RangeError(`Unknown progression menu: ${menuItemId}`);
     }
-    return calculateMenuPrice(
-      config.basePrice,
-      Math.max(1, progress.priceLevel),
-      progress.specialMultiplier,
-      this.state.finaleRevenueMultiplier,
+    const rawPrice = this.calculateRawMenuPrice(config.basePrice, progress);
+    if (!progress.unlocked) {
+      return rawPrice;
+    }
+    const newestUnlockedIndex = this.state.menuProgress
+      .map((menu) => menu.unlocked)
+      .lastIndexOf(true);
+    const menuIndex = this.state.menuProgress.findIndex((menu) => menu.menuItemId === menuItemId);
+    const newestProgress = this.state.menuProgress[newestUnlockedIndex];
+    const newestConfig = configs[newestUnlockedIndex];
+    if (newestProgress === undefined || newestConfig === undefined || menuIndex < 0) {
+      return rawPrice;
+    }
+    return applyMenuPortfolioPriceFloor(
+      rawPrice,
+      this.calculateRawMenuPrice(newestConfig.basePrice, newestProgress),
+      newestUnlockedIndex - menuIndex,
     );
   }
 
   public getMenuCookingTimeMs(menuItemId: MenuItemId, quantity = 1): number {
-    const config = MENU_PROGRESSION_CONFIGS.find((menu) => menu.menuItemId === menuItemId);
+    const config = getMenuProgressionConfigs(this.state.chapterId)
+      .find((menu) => menu.menuItemId === menuItemId);
     const progress = this.state.menuProgress.find((menu) => menu.menuItemId === menuItemId);
     if (config === undefined || progress === undefined) {
       throw new RangeError(`Unknown progression menu: ${menuItemId}`);
@@ -183,7 +219,7 @@ export class ProgressionSystem {
   }
 
   public getMenuOrderWeights(): ReadonlyMap<MenuItemId, number> {
-    const unlocked = MENU_PROGRESSION_CONFIGS.filter((menu) =>
+    const unlocked = getMenuProgressionConfigs(this.state.chapterId).filter((menu) =>
       this.state.menuProgress.some(
         (progress) => progress.menuItemId === menu.menuItemId && progress.unlocked,
       ));
@@ -328,11 +364,24 @@ export class ProgressionSystem {
 
   public isFinalFacilityPurchased(): boolean {
     return this.state.currentStage === 30
-      && this.state.purchasedStepCount >= getStageConfig(30).purchaseCosts.length;
+      && this.state.purchasedStepCount >= getStageConfig(30, this.state.chapterId).purchaseCosts.length;
+  }
+
+  public isChapterComplete(rating = this.economy.getRating()): boolean {
+    return this.isFinalFacilityPurchased() && rating >= PROGRESSION_CLEAR_RATING;
   }
 
   public isGameComplete(rating = this.economy.getRating()): boolean {
-    return this.isFinalFacilityPurchased() && rating >= PROGRESSION_CLEAR_RATING;
+    return this.state.chapterId === 5 && this.isChapterComplete(rating);
+  }
+
+  public advanceChapter(rating = this.economy.getRating()): ChapterId | undefined {
+    if (!this.isChapterComplete(rating)) return undefined;
+    const nextChapterId = getNextChapterId(this.state.chapterId);
+    if (nextChapterId === undefined) return undefined;
+    this.state = createDefaultProgressionState(nextChapterId);
+    this.notify();
+    return nextChapterId;
   }
 
   public subscribe(listener: ProgressionListener): () => void {
@@ -342,7 +391,7 @@ export class ProgressionSystem {
   }
 
   public debugGrantThroughStage(targetStage: GrowthStage): void {
-    this.state = createDefaultProgressionState();
+    this.state = createDefaultProgressionState(this.state.chapterId);
     while (
       !this.isFinalFacilityPurchased()
       && (this.state.currentStage < targetStage || targetStage === 30)
@@ -381,23 +430,33 @@ export class ProgressionSystem {
         workerProgress,
         feverState,
       ));
-    } else if (purchase.targetMenuItemId !== undefined) {
+    } else if (purchase.effect === "menu_speed" && purchase.targetMenuItemId !== undefined) {
       menuProgress = menuProgress.map((menu) => {
         if (menu.menuItemId !== purchase.targetMenuItemId) {
           return menu;
         }
-        if (purchase.effect === "menu_speed") {
-          return { ...menu, speedLevel: menu.speedLevel + 1 };
-        }
-        const priceLevels = purchase.effect === "decor" ? 2 : 1;
-        return { ...menu, priceLevel: menu.priceLevel + priceLevels };
+        return { ...menu, speedLevel: menu.speedLevel + 1 };
       });
+    } else if (purchase.effect === "service_flow") {
+      workerProgress = {
+        ...workerProgress,
+        chefSpeedLevel: workerProgress.chefSpeedLevel + 1,
+        serverSpeedLevel: workerProgress.serverSpeedLevel + 1,
+      };
+    } else {
+      const sharedPriceLevelGain = getSharedMenuPriceLevelGain(purchase.effect);
+      if (sharedPriceLevelGain > 0) {
+        menuProgress = menuProgress.map((menu) => menu.unlocked
+          ? { ...menu, priceLevel: menu.priceLevel + sharedPriceLevelGain }
+          : menu);
+      }
     }
 
-    const config = getStageConfig(this.state.currentStage);
+    const config = getStageConfig(this.state.currentStage, this.state.chapterId);
     const nextStepCount = this.state.purchasedStepCount + 1;
     const stageFinished = nextStepCount >= config.purchaseCosts.length;
     this.state = {
+      chapterId: this.state.chapterId,
       currentStage: stageFinished && this.state.currentStage < 30
         ? (this.state.currentStage + 1) as GrowthStage
         : this.state.currentStage,
@@ -429,10 +488,20 @@ export class ProgressionSystem {
       }
     }
   }
+
+  private calculateRawMenuPrice(basePrice: number, progress: MenuProgress): number {
+    return calculateMenuPrice(
+      basePrice,
+      Math.max(1, progress.priceLevel),
+      progress.specialMultiplier,
+      this.state.finaleRevenueMultiplier,
+    );
+  }
 }
 
 function buildPurchase(state: ProgressionState): ProgressionPurchaseData {
-  const config = getStageConfig(state.currentStage);
+  const config = getStageConfig(state.currentStage, state.chapterId);
+  const menuConfigs = getMenuProgressionConfigs(state.chapterId);
   const step = state.purchasedStepCount + 1;
   const stepCount = config.purchaseCosts.length;
   const cost = config.purchaseCosts[state.purchasedStepCount];
@@ -443,27 +512,26 @@ function buildPurchase(state: ProgressionState): ProgressionPurchaseData {
     ?? state.menuProgress[0];
 
   if (state.currentStage === 30) {
+    const chapter = getChapter(state.chapterId);
     return {
       stage: 30,
       step,
       stepCount,
-      name: `달빛 간판 부품 ${step}`,
-      description: `달빛 간판의 ${step}/5 부품을 켜고 전체 수익을 12% 올립니다.`,
+      name: `${chapter.finaleName} 부품 ${step}`,
+      description: `${chapter.finaleName}의 ${step}/5 부품을 완성하고 전체 수익을 12% 올립니다.`,
       cost,
       effect: "finale_part",
     };
   }
 
   if (step === stepCount) {
-    const chefSlotCount = [4, 12, 19, 27].indexOf(state.currentStage) + 1;
+    const keyEffectCopy = getStageKeyEffectCopy(state.currentStage, state.chapterId);
     return {
       stage: state.currentStage,
       step,
       stepCount,
-      name: config.keyUpgrade,
-      description: chefSlotCount > 0
-        ? `셰프와 조리 슬롯을 ${chefSlotCount}개로 늘려 같은 메뉴도 동시에 만듭니다.`
-        : `${state.currentStage}단계의 핵심 확장을 완성하고 다음 단계를 엽니다.`,
+      name: keyEffectCopy.name,
+      description: keyEffectCopy.description,
       cost,
       effect: "stage_key",
       targetMenuItemId: activeMenu?.menuItemId,
@@ -471,15 +539,93 @@ function buildPurchase(state: ProgressionState): ProgressionPurchaseData {
   }
 
   const generic = GENERIC_EFFECTS[state.purchasedStepCount] ?? GENERIC_EFFECTS[0];
+  const activeMenuName = menuConfigs.find(
+    (menu) => menu.menuItemId === activeMenu?.menuItemId,
+  )?.name ?? "주력 메뉴";
   return {
     stage: state.currentStage,
     step,
     stepCount,
-    name: generic.name,
-    description: generic.description,
+    name: generic.effect === "menu_speed"
+      ? `${activeMenuName} 조리시간 10% 단축`
+      : generic.name,
+    description: generic.effect === "menu_speed"
+      ? `${activeMenuName} 주문이 10% 더 빨리 완성됩니다.`
+      : generic.description,
     cost,
     effect: generic.effect,
     targetMenuItemId: activeMenu?.menuItemId,
+  };
+}
+
+function getStageKeyEffectCopy(stage: GrowthStage, chapterId: ChapterId): { name: string; description: string } {
+  const config = getStageConfig(stage, chapterId);
+  const menuConfigs = getMenuProgressionConfigs(chapterId);
+  const previousConfig = STAGE_CONFIGS[stage - 2];
+  const changes: string[] = [];
+  const unlock = MENU_UNLOCKS.get(stage);
+  let unlockedMenuName: string | undefined;
+  if (unlock !== undefined) {
+    unlockedMenuName = menuConfigs.find(
+      (menu) => menu.menuItemId === unlock,
+    )?.name ?? "새 메뉴";
+    changes.push(`${unlockedMenuName} 해금`);
+  }
+  const special = MENU_SPECIALS.get(stage);
+  let specialMenuName: string | undefined;
+  if (special !== undefined) {
+    specialMenuName = menuConfigs.find(
+      (menu) => menu.menuItemId === special.menuItemId,
+    )?.name ?? "메뉴";
+    changes.push(`${specialMenuName} 판매가격 ×${special.multiplier}`);
+  }
+  if (stage === 3) changes.push("모든 메뉴 조리시간 15% 단축");
+  if (stage === 17) changes.push("모든 메뉴 조리시간 추가 18% 단축");
+  const previousChefCount = previousConfig?.chefCount ?? 0;
+  if (config.chefCount > previousChefCount) changes.push(`셰프 ${config.chefCount}명 고용`);
+  const previousServerCount = previousConfig?.serverCount ?? 0;
+  if (config.serverCount > previousServerCount) {
+    changes.push(`서빙 알바 ${config.serverCount}명 고용`);
+  }
+  const previousSeatCount = previousConfig?.seatCount ?? 2;
+  if (config.seatCount > previousSeatCount) {
+    changes.push(`좌석 ${previousSeatCount}개 → ${config.seatCount}개`);
+  }
+  if (stage === 9) changes.push("FEVER Lv.1 해금");
+  if (stage === 18) changes.push("FEVER Lv.2 해금");
+  if (stage === 23) changes.push("VIP 손님과 메뉴 홍보 해금");
+  if (stage === 25) changes.push("러시타임 해금");
+  if (stage === 29) changes.push("FEVER Lv.3 해금");
+
+  if (changes.length === 0) {
+    return {
+      name: `${stage}단계 완료`,
+      description: `이 단계를 완료하고 ${Math.min(30, stage + 1)}단계를 엽니다.`,
+    };
+  }
+  const chefHired = config.chefCount > previousChefCount;
+  const serverHired = config.serverCount > previousServerCount;
+  const seatsAdded = config.seatCount > previousSeatCount;
+  const name = unlockedMenuName !== undefined
+    ? `${unlockedMenuName} 해금`
+    : special !== undefined
+      ? `${specialMenuName ?? "메뉴"} 가격 ×${special.multiplier}`
+      : chefHired && serverHired
+        ? `직원 ${config.chefCount}명씩 고용`
+        : chefHired
+          ? `셰프 ${config.chefCount}명 고용`
+          : serverHired
+            ? `서빙 알바 ${config.serverCount}명 고용`
+            : stage === 3
+              ? "전체 조리시간 -15%"
+              : stage === 17
+                ? "전체 조리시간 -18%"
+                : seatsAdded
+                  ? `좌석 ${previousSeatCount}개 → ${config.seatCount}개`
+                  : changes[0] ?? `${stage}단계 완료`;
+  return {
+    name,
+    description: `${changes.join(" · ")}.`,
   };
 }
 
@@ -506,11 +652,17 @@ function applyStageKey(
       ? { ...menu, specialMultiplier: Math.max(menu.specialMultiplier, special.multiplier) }
       : menu);
   }
-  if ([4, 12, 19, 27].includes(stage)) {
-    workerProgress = { ...workerProgress, chefCount: Math.min(4, workerProgress.chefCount + 1) };
+  if ([4, 12, 19, 27, 29].includes(stage)) {
+    workerProgress = {
+      ...workerProgress,
+      chefCount: Math.min(MAX_WORKERS_PER_ROLE, workerProgress.chefCount + 1),
+    };
   }
-  if ([7, 14, 22, 28].includes(stage)) {
-    workerProgress = { ...workerProgress, serverCount: Math.min(4, workerProgress.serverCount + 1) };
+  if ([7, 14, 22, 28, 29].includes(stage)) {
+    workerProgress = {
+      ...workerProgress,
+      serverCount: Math.min(MAX_WORKERS_PER_ROLE, workerProgress.serverCount + 1),
+    };
   }
   const feverLevel = stage >= 29 ? 3 : stage >= 18 ? 2 : stage >= 9 ? 1 : feverState.level;
   feverState = { ...feverState, level: feverLevel as FeverState["level"] };
@@ -519,9 +671,10 @@ function applyStageKey(
 
 function repairProgressionState(state: ProgressionState): ProgressionState {
   const cloned = cloneState(state);
+  const menuConfigs = getMenuProgressionConfigs(cloned.chapterId);
   const completedStage = getCompletedStage(cloned);
   const menuProgress = cloned.menuProgress.map((menu) => {
-    const config = MENU_PROGRESSION_CONFIGS.find((candidate) => candidate.menuItemId === menu.menuItemId);
+    const config = menuConfigs.find((candidate) => candidate.menuItemId === menu.menuItemId);
     const specialEntry = [...MENU_SPECIALS.values()].find((entry) => entry.menuItemId === menu.menuItemId);
     const specialStage = [...MENU_SPECIALS.entries()].find(([, entry]) => entry.menuItemId === menu.menuItemId)?.[0];
     return {
@@ -539,6 +692,8 @@ function repairProgressionState(state: ProgressionState): ProgressionState {
     };
   });
   const completedConfig = completedStage > 0 ? STAGE_CONFIGS[completedStage - 1] : undefined;
+  const repairedWorkerSpeedLevel = Math.min(29, completedStage)
+    + (cloned.currentStage < 30 && cloned.purchasedStepCount >= 4 ? 1 : 0);
   return {
     ...cloned,
     menuProgress,
@@ -546,6 +701,14 @@ function repairProgressionState(state: ProgressionState): ProgressionState {
       ...cloned.workerProgress,
       chefCount: Math.max(cloned.workerProgress.chefCount, completedConfig?.chefCount ?? 0),
       serverCount: Math.max(cloned.workerProgress.serverCount, completedConfig?.serverCount ?? 0),
+      chefSpeedLevel: Math.max(
+        cloned.workerProgress.chefSpeedLevel,
+        repairedWorkerSpeedLevel,
+      ),
+      serverSpeedLevel: Math.max(
+        cloned.workerProgress.serverSpeedLevel,
+        repairedWorkerSpeedLevel,
+      ),
     },
     feverState: {
       ...cloned.feverState,
@@ -556,7 +719,7 @@ function repairProgressionState(state: ProgressionState): ProgressionState {
 
 function getCompletedStage(state: ProgressionState): number {
   return state.currentStage === 30
-    && state.purchasedStepCount >= getStageConfig(30).purchaseCosts.length
+    && state.purchasedStepCount >= getStageConfig(30, state.chapterId).purchaseCosts.length
     ? 30
     : state.currentStage - 1;
 }

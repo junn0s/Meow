@@ -19,6 +19,11 @@ import {
 import { EconomySystem } from "../src/game/systems/EconomySystem";
 import { ProgressionSystem } from "../src/game/systems/ProgressionSystem";
 import {
+  applyMenuPortfolioPriceFloor,
+  getMenuPortfolioFloorRatio,
+  getSharedMenuPriceLevelGain,
+} from "../src/game/systems/MenuPriceProgressionRules";
+import {
   calculateOfflineEfficiency,
   calculateOfflineReward,
 } from "../src/game/systems/OfflineEarningsSystem";
@@ -30,7 +35,10 @@ import {
   MAX_WAITING_CUSTOMERS,
   selectFoodRecipient,
 } from "../src/game/systems/ServiceFlowRules";
-import { TouchInputState } from "../src/game/input/TouchControls";
+import {
+  getJoystickDirections,
+  TouchInputState,
+} from "../src/game/input/TouchControls";
 import {
   canStartCookingTicket,
   getMenuConcurrentChefLimit,
@@ -43,6 +51,7 @@ import {
 } from "../src/game/systems/CustomizationSystem";
 import {
   getStageConfig,
+  MAX_WORKERS_PER_ROLE,
   TOTAL_TARGET_ACTIVE_SECONDS,
   WORKER_HIRE_CONFIGS,
 } from "../src/game/data/progressionData";
@@ -78,6 +87,10 @@ const sale = calculateSale({
   feverMultiplier: 2,
 });
 assert.equal(getMenuItem("fish-bread").name, "순대", "the third menu must be sundae");
+assert.equal(getMenuItem("fishcake", 2).name, "코코넛 워터");
+assert.equal(getMenuItem("tteokbokki", 3).name, "돌솥 비빔밥");
+assert.equal(getMenuItem("ramen", 4).name, "버터 랍스터");
+assert.equal(getMenuItem("moonlight-set", 5).name, "달빛 오마카세");
 assert.deepEqual(sale, {
   subtotal: 300,
   baseAmount: 1_080,
@@ -94,6 +107,12 @@ assert.equal(getMenuPrice(100, 10), 417);
 assert.equal(getCookingTimeMs(10_000, 100), 3_500, "cooking speed must respect its floor");
 assert.equal(getCookingTimeMs(10_000, 0, 1, 3), 23_000);
 assert.equal(formatCompactNumber(1_250_000), "1.25M");
+assert.equal(getSharedMenuPriceLevelGain("menu_price"), 1);
+assert.equal(getSharedMenuPriceLevelGain("decor"), 1);
+assert.equal(getSharedMenuPriceLevelGain("service_flow"), 0);
+assert.equal(getMenuPortfolioFloorRatio(1), 0.24);
+assert.equal(getMenuPortfolioFloorRatio(5), 0.01);
+assert.equal(applyMenuPortfolioPriceFloor(100, 1_000, 1), 240);
 const cosmeticEconomy = new EconomySystem({ money: 500 });
 const cosmetics = new CustomizationSystem();
 assert.equal(cosmetics.purchaseOrEquip("peach", cosmeticEconomy), "purchased");
@@ -120,6 +139,18 @@ assert.equal(cosmetics.purchaseFacility("staff-badge", staffEconomy), "purchased
 assert.equal(cosmetics.getFacilityEffects().chefTint, 0x8ff0df);
 assert.equal(cosmetics.getFacilityEffects().serverTint, 0xff9dcd);
 assert.equal(cosmetics.getFacilityEffects().chefActionTimeMultiplier, 0.95);
+const expandedShopEconomy = new EconomySystem({ money: 33_900_000 });
+assert.equal(cosmetics.purchaseFacility("steam-hood", expandedShopEconomy), "purchased");
+assert.equal(cosmetics.purchaseFacility("tea-dispenser", expandedShopEconomy), "purchased");
+assert.equal(cosmetics.purchaseFacility("wind-chime", expandedShopEconomy), "purchased");
+assert.equal(cosmetics.purchaseFacility("coupon-board", expandedShopEconomy), "purchased");
+assert.equal(cosmetics.purchaseFacility("server-shoes", expandedShopEconomy), "purchased");
+assert.equal(expandedShopEconomy.getMoney(), 0);
+assert.ok(Math.abs(cosmetics.getFacilityEffects().cookingTimeMultiplier - 0.846) < 0.000_001);
+assert.equal(cosmetics.getFacilityEffects().patienceMultiplier, 1.12);
+assert.equal(cosmetics.getFacilityEffects().revenueMultiplier, 1.06);
+assert.equal(cosmetics.getFacilityEffects().customerArrivalMultiplier, 0.95);
+assert.ok(Math.abs(cosmetics.getFacilityEffects().serverActionTimeMultiplier - 0.874) < 0.000_001);
 const lockedFacilityEconomy = new EconomySystem({ money: 100_000_000 });
 assert.equal(cosmetics.purchaseFacility("moon-sign", lockedFacilityEconomy, 4), "locked");
 assert.equal(lockedFacilityEconomy.getMoney(), 100_000_000);
@@ -131,6 +162,9 @@ assert.equal(cosmetics.getWorktopSlotCount("fishcake"), 2);
 assert.equal(cosmetics.purchaseWorktopSlot("fishcake", 100, worktopEconomy), "purchased");
 assert.equal(cosmetics.getWorktopSlotCount("fishcake"), 3);
 assert.equal(cosmetics.purchaseWorktopSlot("fishcake", 100, worktopEconomy), "maxed");
+cosmetics.setActiveChapter(2);
+assert.equal(cosmetics.getWorktopSlotCount("fishcake"), 1, "each chapter needs fresh menu worktops");
+cosmetics.setActiveChapter(1);
 const chefOneTicket = {
   customerId: "cook-a",
   menuItemId: "tteokbokki" as const,
@@ -196,10 +230,21 @@ assert.equal(
 assert.equal(getStageConfig(6).targetDurationSeconds, 204);
 assert.equal(getStageConfig(11).targetDurationSeconds, 336);
 assert.equal(getStageConfig(30).targetDurationSeconds, 2_520);
+assert.equal(getStageConfig(1, 2).purchaseCosts[0], getStageConfig(1).purchaseCosts[0] * 2);
+assert.equal(getStageConfig(1, 5).purchaseCosts[0], getStageConfig(1).purchaseCosts[0] * 30);
 assert.equal(TOTAL_TARGET_ACTIVE_SECONDS, 16_218);
 assert.equal(
   WORKER_HIRE_CONFIGS.find((worker) => worker.role === "server" && worker.ordinal === 1)?.cost,
   10_000,
+);
+assert.equal(MAX_WORKERS_PER_ROLE, 5);
+assert.equal(
+  WORKER_HIRE_CONFIGS.find((worker) => worker.role === "chef" && worker.ordinal === 5)?.unlockStage,
+  29,
+);
+assert.equal(
+  WORKER_HIRE_CONFIGS.find((worker) => worker.role === "server" && worker.ordinal === 5)?.unlockStage,
+  29,
 );
 
 const clock = new DayNightController();
@@ -222,13 +267,64 @@ for (let step = 0; step < 6; step += 1) {
 }
 assert.equal(progression.getCurrentStage(), 2);
 assert.equal(progression.getState().purchasedStepCount, 0);
+assert.equal(
+  progression.getState().menuProgress.find((menu) => menu.menuItemId === "fishcake")?.priceLevel,
+  4,
+  "one stage must add three explicit shared price levels, not five hidden focus levels",
+);
 assert.ok(progression.getMenuPrice("fishcake") > 18);
+assert.equal(progression.getState().workerProgress.chefSpeedLevel, 1);
+assert.equal(progression.getState().workerProgress.serverSpeedLevel, 1);
+assert.equal(progression.getEffects().chefActionTimeMultiplier, 0.98);
+assert.equal(progression.getEffects().serverActionTimeMultiplier, 0.98);
+const chapterEconomy = new EconomySystem();
+const chapterProgression = new ProgressionSystem(chapterEconomy);
+chapterProgression.debugGrantThroughStage(30);
+chapterEconomy.debugSetProgress(500, 5);
+assert.equal(chapterProgression.isChapterComplete(), true);
+assert.equal(chapterProgression.isGameComplete(), false, "chapter one must open the next restaurant, not end the game");
+assert.equal(chapterProgression.advanceChapter(), 2);
+assert.equal(chapterProgression.getState().chapterId, 2);
+assert.equal(chapterProgression.getCurrentStage(), 1);
+assert.deepEqual(chapterProgression.getEffects().unlockedMenuIds, ["fishcake"]);
+for (const expectedNextChapter of [3, 4, 5] as const) {
+  chapterProgression.debugGrantThroughStage(30);
+  assert.equal(chapterProgression.advanceChapter(), expectedNextChapter);
+  assert.equal(chapterProgression.getState().chapterId, expectedNextChapter);
+}
+chapterProgression.debugGrantThroughStage(30);
+assert.equal(chapterProgression.isGameComplete(), true, "only chapter five may finish the whole journey");
+assert.equal(chapterProgression.advanceChapter(), undefined);
+const purchaseCopyProgression = new ProgressionSystem(new EconomySystem());
+assert.equal(purchaseCopyProgression.getNextPurchase()?.purchase.name, "모든 메뉴 판매가격 상승");
+purchaseCopyProgression.debugCompleteNextPurchase();
+assert.equal(purchaseCopyProgression.getNextPurchase()?.purchase.name, "어묵 조리시간 10% 단축");
+purchaseCopyProgression.debugGrantThroughStage(2);
+for (let step = 0; step < 5; step += 1) purchaseCopyProgression.debugCompleteNextPurchase();
+assert.equal(purchaseCopyProgression.getNextPurchase()?.purchase.name, "좌석 2개 → 3개");
 progression.debugGrantThroughStage(8);
 assert.deepEqual(progression.getEffects().unlockedMenuIds, ["fishcake", "tteokbokki"]);
 assert.equal(progression.getEffects().serverCount, 1);
 assert.ok(
+  progression.getMenuPrice("fishcake") >= Math.round(progression.getMenuPrice("tteokbokki") * 0.24),
+  "fishcake must keep at least 24% of the newest menu price after tteokbokki unlocks",
+);
+assert.ok(
   (progression.getState().menuProgress.find((menu) => menu.menuItemId === "tteokbokki")?.speedLevel ?? 0) >= 1,
   "new menus must open with one speed level so their first orders do not feel stalled",
+);
+const sharedPriceProgression = new ProgressionSystem(new EconomySystem());
+sharedPriceProgression.debugGrantThroughStage(7);
+const pricesBeforeSharedUpgrade = sharedPriceProgression.getState().menuProgress
+  .filter((menu) => menu.unlocked)
+  .map((menu) => menu.priceLevel);
+assert.equal(sharedPriceProgression.debugCompleteNextPurchase(), true);
+assert.deepEqual(
+  sharedPriceProgression.getState().menuProgress
+    .filter((menu) => menu.unlocked)
+    .map((menu) => menu.priceLevel),
+  pricesBeforeSharedUpgrade.map((level) => level + 1),
+  "a price purchase must add one level to every unlocked menu",
 );
 progression.debugGrantThroughStage(10);
 assert.equal(progression.getFeverState().level, 1);
@@ -248,7 +344,20 @@ assert.equal(progression.getEffects().fameRevenueMultiplier, 1.04);
 progression.debugGrantThroughStage(30);
 assert.equal(progression.getEffects().seatCount, 14);
 assert.equal(progression.getEffects().unlockedMenuIds.length, 6);
+assert.equal(progression.getEffects().chefCount, 5);
+assert.equal(progression.getEffects().serverCount, 5);
+assert.equal(progression.getEffects().cookingSlotCount, 5);
 assert.equal(progression.isFinalFacilityPurchased(), true);
+const finalMenuPrices = progression.getEffects().unlockedMenuIds.map((menuItemId) =>
+  progression.getMenuPrice(menuItemId));
+const finalNewestPrice = finalMenuPrices.at(-1) ?? 0;
+for (let index = 0; index < finalMenuPrices.length; index += 1) {
+  const distance = finalMenuPrices.length - 1 - index;
+  assert.ok(
+    (finalMenuPrices[index] ?? 0) >= Math.round(finalNewestPrice * getMenuPortfolioFloorRatio(distance)),
+    `menu ${index} must retain its portfolio price floor at the final stage`,
+  );
+}
 
 assert.deepEqual(getFameBenefits(1).unlockedCustomerKinds, ["rabbit", "dog"]);
 assert.deepEqual(getFameBenefits(3).unlockedCustomerKinds, ["rabbit", "dog", "hamster", "raccoon"]);
@@ -367,6 +476,9 @@ assert.equal(canSpawnCustomer([
 ], 2), false, "the visible waiting line must be capped at two guests");
 
 const touchInput = new TouchInputState();
+assert.deepEqual(getJoystickDirections(0.8, 0.05), ["right"]);
+assert.deepEqual(getJoystickDirections(-0.7, -0.7), ["left", "up"]);
+assert.deepEqual(getJoystickDirections(0.05, 0.05), [], "the joystick center must be a dead zone");
 assert.equal(CHARACTER_MOVE_SPEED_PX_PER_SECOND, 78);
 assert.equal(calculateCharacterTravelDurationMs(0, 0, 78, 0), 1_000);
 assert.equal(calculateCharacterTravelDurationMs(0, 0, 0, 156), 2_000);
@@ -377,6 +489,9 @@ assert.equal(touchInput.isDirectionDown("up"), true, "two-finger diagonal moveme
 touchInput.releasePointer(11);
 assert.equal(touchInput.isDirectionDown("left"), false);
 assert.equal(touchInput.isDirectionDown("up"), true);
+touchInput.setPointerDirections(13, ["right", "down"]);
+assert.equal(touchInput.isDirectionDown("right"), true, "one joystick pointer must support diagonals");
+assert.equal(touchInput.isDirectionDown("down"), true, "one joystick pointer must support diagonals");
 touchInput.resetDirections();
 assert.equal(touchInput.isDirectionDown("up"), false, "blur and visibility reset must stop movement");
 let actionCount = 0;
@@ -452,6 +567,7 @@ assert.equal(migrated.settings.reducedMotion, false);
 assert.equal(migrated.settings.musicMuted, false);
 assert.equal(migrated.settings.sfxMuted, false);
 assert.equal(migrated.settings.performanceMode, "balanced");
-assert.ok(storage.getItem(DEFAULT_SAVE_KEY), "migration must persist a v4 copy");
+assert.equal(migrated.progression.chapterId, 1);
+assert.ok(storage.getItem(DEFAULT_SAVE_KEY), "migration must persist a v5 copy");
 
 process.stdout.write("Foundation smoke tests: PASS (economy, progression, service flow, touch input, audio, fever, offline, clock, save migration)\n");

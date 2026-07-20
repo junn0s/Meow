@@ -5,6 +5,7 @@ import { SaveSystem } from "../systems/SaveSystem";
 import { PixelButton } from "../../ui/PixelButton";
 import { configureHighDefinitionScene } from "../art/Presentation";
 import { touchInput } from "../input/TouchControls";
+import { getChapter } from "../data/chapterData";
 
 export class MenuScene extends Phaser.Scene {
   private readonly saveSystem = new SaveSystem();
@@ -21,7 +22,8 @@ export class MenuScene extends Phaser.Scene {
     const save = this.saveSystem.load();
     const reducedMotion = save?.settings.reducedMotion
       || window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
-    createMenuBackdrop(this, reducedMotion);
+    const chapter = getChapter(save?.progression.chapterId ?? 1);
+    createMenuBackdrop(this, reducedMotion, chapter.id);
     this.effects = new SoundManager(save?.settings ?? false);
     this.effects.setMenuMusic();
     const handleVisibilityChange = (): void => {
@@ -42,7 +44,7 @@ export class MenuScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setDepth(30);
     this.add
-      .text(240, 59, "달빛 아래 야식당", {
+      .text(240, 59, "FIVE RESTAURANT JOURNEY", {
         fontFamily: UI_FONT,
         fontStyle: "bold",
         fontSize: "11px",
@@ -52,7 +54,7 @@ export class MenuScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setDepth(30);
     this.add
-      .text(240, 79, "비 오는 밤, 따뜻한 한 그릇.", {
+      .text(240, 79, `CHAPTER ${chapter.id} · ${chapter.shortTitle}`, {
         fontFamily: UI_FONT,
         fontSize: "8px",
         color: "#aeb9d8",
@@ -69,7 +71,7 @@ export class MenuScene extends Phaser.Scene {
     this.add.image(241, 126, "steam-0").setScale(1.2).setDepth(36).setAlpha(0.65);
 
     const hasSave = save !== null;
-    const continueLabel = save?.cleared === true ? "완성 기록 보기" : hasSave ? "이어하기" : "영업 시작";
+    const continueLabel = save?.cleared === true ? "완성 기록 보기" : hasSave ? `CH.${chapter.id} 이어하기` : "CH.1 영업 시작";
     const primaryAction = (): void => {
       void this.effects?.unlock();
       if (save?.cleared === true) {
@@ -78,6 +80,7 @@ export class MenuScene extends Phaser.Scene {
             save.customerCount,
             save.rating,
             save.elapsedMs,
+            save.progression.chapterId,
           );
       } else {
         this.startGame(!hasSave);
@@ -205,9 +208,15 @@ export class MenuScene extends Phaser.Scene {
     });
   }
 
-  private openResult(money: number, customerCount: number, rating: number, elapsedMs: number): void {
+  private openResult(
+    money: number,
+    customerCount: number,
+    rating: number,
+    elapsedMs: number,
+    completedChapterId: 1 | 2 | 3 | 4 | 5,
+  ): void {
     this.effects?.click();
-    this.scene.start("ResultScene", { money, customerCount, rating, elapsedMs });
+    this.scene.start("ResultScene", { money, customerCount, rating, elapsedMs, completedChapterId });
   }
 }
 

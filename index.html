@@ -2,7 +2,10 @@
 <html lang="ko">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
+    />
     <meta name="theme-color" content="#0b1026" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -33,12 +36,30 @@
       <p class="keyboard-hint">
         <kbd>WASD</kbd><span>이동</span><kbd>SPACE</kbd><span>상호작용</span><kbd>ESC</kbd><span>일시정지</span>
       </p>
+      <section id="mobile-upgrade-panel" class="mobile-upgrade-panel" aria-label="다음 업그레이드" hidden>
+        <div class="mobile-upgrade-panel__copy">
+          <span class="mobile-upgrade-panel__badge" data-mobile-upgrade-badge>1장 · 1단계</span>
+          <strong data-mobile-upgrade-name>다음 업그레이드</strong>
+          <small data-mobile-upgrade-description>포차를 한 단계 성장시킵니다.</small>
+        </div>
+        <div class="mobile-upgrade-panel__purchase">
+          <span data-mobile-upgrade-cost>0냥</span>
+          <button type="button" data-mobile-upgrade-button>구매하기</button>
+        </div>
+        <div class="mobile-upgrade-panel__progress" aria-hidden="true">
+          <i data-mobile-upgrade-progress></i>
+        </div>
+        <span class="mobile-upgrade-panel__step" data-mobile-upgrade-step>1단계 · 0/6</span>
+      </section>
       <section class="touch-controls" aria-label="모바일 게임 조작">
-        <div class="touch-controls__pad" aria-label="이동 방향">
-          <button type="button" data-touch-direction="up" aria-label="위로 이동" aria-pressed="false">▲</button>
-          <button type="button" data-touch-direction="left" aria-label="왼쪽으로 이동" aria-pressed="false">◀</button>
-          <button type="button" data-touch-direction="down" aria-label="아래로 이동" aria-pressed="false">▼</button>
-          <button type="button" data-touch-direction="right" aria-label="오른쪽으로 이동" aria-pressed="false">▶</button>
+        <div
+          class="touch-controls__joystick"
+          data-touch-joystick
+          role="application"
+          aria-label="이동 조이스틱. 원하는 방향으로 드래그하세요."
+        >
+          <span class="touch-controls__joystick-ring" aria-hidden="true"></span>
+          <span class="touch-controls__joystick-knob" data-touch-joystick-knob aria-hidden="true"></span>
         </div>
         <button class="touch-controls__action" type="button" data-touch-command="action" aria-label="상호작용" aria-pressed="false">행동</button>
         <button class="touch-controls__pause" type="button" data-touch-command="pause" aria-label="일시정지" aria-pressed="false">Ⅱ</button>

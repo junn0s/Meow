@@ -1,5 +1,5 @@
 import Phaser from "phaser";
-import { getMenuItem } from "../data/menuData";
+import { getFoodTextureKey, getMenuItem, getStationTextureKey } from "../data/menuData";
 import type { MenuItemId } from "../types/game";
 
 export interface CookingTicket {
@@ -52,7 +52,7 @@ export class CookingStation {
     this.x = x;
     this.y = y;
     const item = getMenuItem(menuItemId);
-    this.sprite = scene.add.image(x, y, `station-${menuItemId}`).setDepth(16);
+    this.sprite = scene.add.image(x, y, getStationTextureKey(menuItemId)).setDepth(16);
     this.label = scene.add
       .text(x, y + 25, item.name, {
         fontFamily: '"Gowun Dodum", sans-serif',
@@ -84,7 +84,7 @@ export class CookingStation {
       .setDepth(20)
       .setVisible(false);
     this.readyIcon = scene.add
-      .image(x + 16, y - 20, `food-${menuItemId}`)
+      .image(x + 16, y - 20, getFoodTextureKey(menuItemId))
       .setDepth(24)
       .setVisible(false);
     this.readyCountLabel = scene.add
@@ -153,16 +153,11 @@ export class CookingStation {
     this.startAvailableTickets();
   }
 
-  public setProgressStats(
-    priceLabel: string,
-    priceLevel: number,
-    speedLevel: number,
-    cookingSlotCount = 1,
-  ): void {
+  public setProgressStats(priceLabel: string): void {
     const item = getMenuItem(this.menuItemId);
     this.label
-      .setText(`${item.name} ${priceLabel}\nP${priceLevel} · S${speedLevel} · C${cookingSlotCount}`)
-      .setFontSize(6)
+      .setText(`${item.name} ${priceLabel}`)
+      .setFontSize(7)
       .setAlign("center");
   }
 

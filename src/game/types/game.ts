@@ -61,6 +61,9 @@ export interface MenuItem {
 
 export type WorkerRole = "chef" | "server";
 
+export const CHAPTER_IDS = [1, 2, 3, 4, 5] as const;
+export type ChapterId = (typeof CHAPTER_IDS)[number];
+
 export const GROWTH_STAGES = [
   1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
   11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
@@ -123,6 +126,7 @@ export interface FeverState {
 }
 
 export interface ProgressionState {
+  readonly chapterId: ChapterId;
   readonly currentStage: GrowthStage;
   readonly purchasedStepCount: number;
   readonly menuProgress: readonly MenuProgress[];
@@ -154,8 +158,10 @@ export interface ProgressionPurchaseView {
   readonly purchase: ProgressionPurchaseData;
   readonly canAfford: boolean;
   readonly canPurchase: boolean;
-  readonly chapter: VisualTier;
+  readonly chapterId: ChapterId;
+  readonly visualTier: VisualTier;
   readonly overallProgress: number;
+  readonly worldProgress: number;
 }
 
 export interface ProgressionEffects {
@@ -165,6 +171,8 @@ export interface ProgressionEffects {
   readonly customerSpawnIntervalMultiplier: number;
   readonly chefCount: number;
   readonly serverCount: number;
+  readonly chefActionTimeMultiplier: number;
+  readonly serverActionTimeMultiplier: number;
   /** Simultaneous hired-chef jobs. The owner always has one separate manual slot. */
   readonly cookingSlotCount: number;
   readonly chefHired: boolean;

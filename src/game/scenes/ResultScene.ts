@@ -5,12 +5,16 @@ import { PixelButton } from "../../ui/PixelButton";
 import { SaveSystem } from "../systems/SaveSystem";
 import { configureHighDefinitionScene } from "../art/Presentation";
 import { touchInput } from "../input/TouchControls";
+import { getChapter } from "../data/chapterData";
+import type { ChapterId } from "../types/game";
 
 export interface ResultSceneData {
   readonly money?: number;
   readonly customerCount?: number;
   readonly rating?: number;
   readonly elapsedMs?: number;
+  readonly completedChapterId?: ChapterId;
+  readonly nextChapterId?: ChapterId;
 }
 
 export class ResultScene extends Phaser.Scene {
@@ -23,15 +27,18 @@ export class ResultScene extends Phaser.Scene {
     const save = new SaveSystem().load();
     const reducedMotion = save?.settings.reducedMotion
       || window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
-    createMenuBackdrop(this, reducedMotion);
+    const completedChapterId = data.completedChapterId ?? 1;
+    const chapter = getChapter(completedChapterId);
+    const nextChapter = data.nextChapterId === undefined ? undefined : getChapter(data.nextChapterId);
+    createMenuBackdrop(this, reducedMotion, completedChapterId);
     this.add.rectangle(240, 135, 480, 270, 0x0a0d1d, 0.66).setDepth(15);
     const sound = new SoundManager(save?.settings ?? false);
     void sound.unlock();
     sound.clear();
 
-    this.add.image(240, 59, "sign-moon").setScale(1.55).setDepth(30);
+    this.add.image(240, 59, `sign-chapter-${completedChapterId}-moon`).setScale(1.55).setDepth(30);
     this.add
-      .text(240, 92, "달빛 야식당 완성!", {
+      .text(240, 92, completedChapterId === 5 ? "5개 챕터 모두 완성!" : `CHAPTER ${completedChapterId} COMPLETE`, {
         fontFamily: UI_FONT,
         fontStyle: "bold",
         fontSize: "22px",
@@ -42,7 +49,7 @@ export class ResultScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setDepth(31);
     this.add
-      .text(240, 117, "오늘 밤도 모두의 배와 마음을 따뜻하게 채웠어요.", {
+      .text(240, 117, chapter.finaleMessage, {
         fontFamily: UI_FONT,
         fontSize: "9px",
         color: "#c8d1e8",
@@ -74,12 +81,14 @@ export class ResultScene extends Phaser.Scene {
         .setDepth(31);
     });
 
-    const startNewGame = (): void => {
+    const continueJourney = (): void => {
       sound.click();
-      this.scene.start("GameScene", { newGame: true });
+      this.scene.start("GameScene", { newGame: nextChapter === undefined });
     };
-    new PixelButton(this, 240, 210, "새로운 밤 시작", startNewGame, {
-      width: 140,
+    new PixelButton(this, 240, 210, nextChapter === undefined
+      ? "처음부터 다시 시작"
+      : `CH.${nextChapter.id} ${nextChapter.shortTitle} 오픈`, continueJourney, {
+      width: nextChapter === undefined ? 150 : 190,
       height: 28,
       primary: true,
       fontSize: 10,
@@ -105,13 +114,15 @@ export class ResultScene extends Phaser.Scene {
         repeat: reducedMotion ? 0 : -1,
       });
     }
-    const removeTouchAction = touchInput.subscribe("action", startNewGame);
+    const removeTouchAction = touchInput.subscribe("action", continueJourney);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       removeTouchAction();
       touchInput.resetDirections();
       sound.dispose();
     });
-    setStatus("달빛 야식당을 완성했습니다.");
+    setStatus(nextChapter === undefined
+      ? "다섯 개의 가게를 모두 완성했습니다."
+      : `${chapter.shortTitle}을 완성하고 ${nextChapter.shortTitle}을 열었습니다.`);
   }
 }
 

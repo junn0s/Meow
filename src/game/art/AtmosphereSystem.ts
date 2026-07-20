@@ -1,5 +1,6 @@
 import Phaser from "phaser";
-import type { PerformanceMode, VisualPhase, VisualTier } from "../types/game";
+import type { ChapterId, PerformanceMode, VisualPhase, VisualTier } from "../types/game";
+import { getChapter } from "../data/chapterData";
 import {
   getPerformanceProfile,
   type PerformanceProfile,
@@ -40,11 +41,13 @@ export class AtmosphereSystem {
     reducedMotion = false,
     performanceMode: PerformanceMode = "balanced",
     private readonly mobile = false,
+    chapterId: ChapterId = 1,
   ) {
+    const chapter = getChapter(chapterId);
     this.reducedMotion = reducedMotion;
     this.profile = getPerformanceProfile(performanceMode, mobile);
-    this.lightRig = new LightRig(scene, reducedMotion, this.profile);
-    this.reflections = new ReflectionLayer(scene);
+    this.lightRig = new LightRig(scene, reducedMotion, this.profile, chapter.accent, chapter.secondary);
+    this.reflections = new ReflectionLayer(scene, chapter.accent, chapter.secondary);
     this.reflections.setEnabled(this.profile.reflectionsEnabled);
     this.weather = new WeatherLayer(scene, reducedMotion, this.profile);
   }
@@ -133,6 +136,8 @@ class LightRig {
     scene: Phaser.Scene,
     reducedMotion: boolean,
     private profile: PerformanceProfile,
+    private readonly accent: number,
+    private readonly secondary: number,
   ) {
     this.scene = scene;
     this.reducedMotion = reducedMotion;
@@ -141,7 +146,7 @@ class LightRig {
       const y = index < 12 ? 58 : 105;
       this.lights.push(
         scene.add
-          .circle(x, y, index % 5 === 0 ? 3 : 2, 0x38d7ff, 0)
+          .circle(x, y, index % 5 === 0 ? 3 : 2, this.accent, 0)
           .setDepth(index < 12 ? 9 : 14)
           .setBlendMode(Phaser.BlendModes.ADD),
       );
@@ -171,7 +176,7 @@ class LightRig {
     const modeBonus = mode === "normal" ? 0 : 4;
     const lightLimit = this.profile.lightLimit;
     this.activeCount = Math.min(lightLimit, tierCount + this.workerCount + modeBonus);
-    const color = mode === "rush" ? 0xf15bd1 : mode === "fever" ? 0x45ffd2 : 0x38d7ff;
+    const color = mode === "rush" ? this.secondary : mode === "fever" ? 0xffd76a : this.accent;
     const targetAlpha = phase === "night" ? 0.9 : phaseVisible ? 0.28 : 0;
     const duration = immediate ? 0 : this.reducedMotion ? 120 : 260;
     for (const [index, light] of this.lights.entries()) {
@@ -204,7 +209,11 @@ class ReflectionLayer {
   private readonly graphics: Phaser.GameObjects.Graphics;
   private enabled = true;
 
-  public constructor(scene: Phaser.Scene) {
+  public constructor(
+    scene: Phaser.Scene,
+    private readonly accent: number,
+    private readonly secondary: number,
+  ) {
     this.graphics = scene.add.graphics().setDepth(5);
   }
 
@@ -212,7 +221,7 @@ class ReflectionLayer {
     this.graphics.clear();
     if (!this.enabled || phase === "day") return;
     const alpha = phase === "night" ? 0.22 : 0.1;
-    const accent = mode === "rush" ? 0xf15bd1 : mode === "fever" ? 0x45ffd2 : 0x38d7ff;
+    const accent = mode === "rush" ? this.secondary : mode === "fever" ? 0xffd76a : this.accent;
     for (let index = 0; index < tier + 2; index += 1) {
       const x = 13 + ((index * 57) % 306);
       const y = 224 + (index % 3) * 12;

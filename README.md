@@ -1,6 +1,6 @@
 # Meow Night Diner
 
-> A cozy pixel-art restaurant management game where a cat owner grows a moonlit street-food stall through 30 increasingly demanding stages.
+> A cozy pixel-art restaurant management journey where a cat owner builds five themed restaurants across 150 increasingly demanding stages.
 
 ## Play the Game
 
@@ -35,8 +35,8 @@ Serve customers, cook and deliver their orders, then reinvest the earnings in fo
 
 Key features include:
 
-- 30 progression stages with six visual tiers
-- Six unlockable dishes with separate price and cooking-speed upgrades
+- Five 30-stage chapters: a moonlit street-food stall, beach cocktail bar, Korean restaurant, classic restaurant, and omakase counter
+- 30 theme-specific dishes with separate price and cooking-speed upgrades
 - Expandable seating and automatic chef and server workers with same-dish parallel cooking
 - A persistent owner-cat color shop with purchasable and equipable styles
 - Persistent facility upgrades for cooking speed, patience, seating, revenue, and decor
@@ -64,15 +64,17 @@ Key features include:
 
 | Action | Control |
 | --- | --- |
-| Move the owner cat | Hold the on-screen directional pad |
+| Move the owner cat | Drag the on-screen analog joystick, including diagonally |
 | Take an order, start cooking at its worktop, pick up food, or serve | Tap the round action button |
 | Pause or open settings | Tap the pause button |
 | Save immediately | Open settings, then tap `지금 저장` |
 | Use menus and buy upgrades | Tap the desired button |
 
+In portrait mode, the gameplay area is centered vertically and the progression purchase card moves below the diner instead of occupying its right side. Pinch zoom, double-tap zoom, text selection, and long-press callouts are disabled on the game surface.
+
 Orders taken by the owner wait at their matching worktop until the owner starts cooking them. The owner has one manual cooking slot separate from the hired chefs, so the owner can cook fishcake while a chef prepares tteokbokki. Each server independently delivers a ready dish to any compatible waiting customer.
 
-Same-dish chef concurrency is `min(hired chefs, that dish's worktop slots)`. With three chefs and a C2 fishcake worktop, two chefs cook fishcake simultaneously while the third chef can prepare another dish. Active worktops show `조리×2` or `조리×3`, and completed servings stack as separate ready dishes.
+Same-dish chef concurrency is `min(hired chefs, that dish's worktop slots)`. With three chefs and a two-slot fishcake worktop, two chefs cook fishcake simultaneously while the third chef can prepare another dish. Active worktops show `조리×2` or `조리×3`, and completed servings stack as separate ready dishes. Worktop labels expose only the dish name and current sale price; internal price, speed, and slot levels stay hidden.
 
 Chefs and servers walk at the same base speed as the owner cat. After a delivery, servers remain at the handoff location instead of returning to a right-side lineup.
 
@@ -103,12 +105,14 @@ src/
 | Path | Responsibility |
 | --- | --- |
 | `src/game/scenes/GameScene.ts` | Runs the restaurant loop, customers, workers, interactions, rushes, and payments. |
-| `src/game/data/progressionData.ts` | Defines the 30-stage progression curve and worker unlocks. |
-| `src/game/systems/ProgressionSystem.ts` | Applies purchases, menu levels, fever progression, and stage completion rules. |
+| `src/game/data/chapterData.ts` | Defines all five restaurants, menus, finale objects, colors, and economy scales. |
+| `src/game/data/progressionData.ts` | Defines each chapter's 30-stage progression curve and worker unlocks. |
+| `src/game/systems/ProgressionSystem.ts` | Applies purchases, chapter resets, menu levels, fever progression, and completion rules. |
 | `src/game/systems/ServiceFlowRules.ts` | Controls customer capacity, arrival flow, and valid food recipients. |
 | `src/game/systems/CookingFlowRules.ts` | Enforces kitchen slot capacity and one simultaneous task per chef. |
 | `src/game/systems/DayNightController.ts` | Advances the active-play clock through day, sunset, night, and dawn. |
-| `src/game/input/TouchControls.ts` | Converts held mobile buttons into continuous movement and actions. |
+| `src/game/input/TouchControls.ts` | Converts the mobile drag joystick into continuous diagonal movement and handles touch actions. |
+| `src/ui/MobileUpgradePanel.ts` | Mirrors progression purchases below the portrait gameplay area. |
 | `src/ui/UpgradePanel.ts` | Displays the current progression goal and handles upgrade purchases. |
 
 ## Run Locally

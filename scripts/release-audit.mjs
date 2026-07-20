@@ -35,13 +35,15 @@ assert.match(html, /rel="manifest"/u, "the PWA manifest must be linked from the 
 assert.match(html, /rel="apple-touch-icon"/u, "iOS must receive a dedicated home-screen icon");
 assert.match(html, /aria-live="polite"/u);
 assert.match(html, /aria-label="모바일 게임 조작"/u);
-assert.match(html, /data-touch-direction="up"/u);
+assert.match(html, /data-touch-joystick/u, "mobile movement must use the drag joystick");
 assert.match(html, /data-touch-command="action"/u);
+assert.match(html, /user-scalable=no/u, "mobile browser zoom must be disabled for the game shell");
 const touchControls = read("src/game/input/TouchControls.ts");
 assert.match(touchControls, /pointercancel/u, "touch cancellation must release movement");
 assert.match(touchControls, /visibilitychange/u, "hidden tabs must reset held directions");
 assert.match(touchControls, /selectstart/u, "native text selection must be blocked on controls");
 assert.match(touchControls, /dblclick/u, "double taps must not open native selection UI");
+assert.match(touchControls, /getJoystickDirections/u, "drag movement must resolve joystick directions");
 const main = read("src/main.ts");
 assert.match(main, /registerServiceWorker/u, "production builds must register the offline worker");
 assert.doesNotMatch(main, /new KeyboardEvent/u, "touch must not rely on synthetic keyboard events");
@@ -59,6 +61,14 @@ assert.match(performanceSystem, /reflectionsEnabled: false/u, "battery mode must
 assert.match(atmosphere, /atmosphereUpdateIntervalMs/u, "atmosphere updates must be throttled by profile");
 assert.match(main, /"low-power"/u, "touch devices must request a low-power GPU profile");
 const gameScene = read("src/game/scenes/GameScene.ts");
+const chapterData = read("src/game/data/chapterData.ts");
+for (const venue of ["달빛 야식당", "선셋 칵테일 바", "고양이 한식당", "별빛 레스토랑", "달빛 오마카세"]) {
+  assert.match(chapterData, new RegExp(venue, "u"), `missing chapter venue: ${venue}`);
+}
+assert.match(read("src/game/systems/ProgressionSystem.ts"), /advanceChapter/u, "chapter completion must open the next restaurant");
+assert.match(read("src/game/systems/SaveSystem.ts"), /SAVE_DATA_VERSION = 5/u, "chapter progress requires save data v5");
+assert.match(read("src/game/art/PixelArtFactory.ts"), /station-chapter-/u, "each chapter needs themed worktop textures");
+assert.match(read("src/game/data/visualData.ts"), /CHAPTER_VISUAL_PALETTES/u, "each chapter needs its own map palette");
 assert.match(read("src/game/art/PixelArtFactory.ts"), /drawSundaeStation/u, "sundae needs its own worktop art");
 assert.doesNotMatch(read("src/game/data/menuData.ts"), /붕어빵/u, "the retired fish-bread name must not appear in live menu data");
 const releaseServerBody = gameScene.match(/private releaseServer\([\s\S]*?\n  \}\n\n  private configureDebugApi/u)?.[0] ?? "";
@@ -68,11 +78,23 @@ assert.match(gameScene, /cookingAgent: automated \? "chef" : "player"/u, "manual
 assert.match(gameScene, /assignChefToWaitingCooking/u, "idle chefs must claim queued parallel-cooking tickets");
 assert.match(read("src/game/entities/CookingStation.ts"), /hasPendingPlayerTicket/u, "worktops must expose player-owned cooking tickets");
 assert.match(read("src/game/entities/CookingStation.ts"), /조리×/u, "parallel cooking must be visible on each worktop");
+assert.doesNotMatch(
+  read("src/game/entities/CookingStation.ts"),
+  /P\$\{priceLevel\}|S\$\{speedLevel\}|C\$\{cookingSlotCount\}/u,
+  "internal P/S/C levels must not be shown below menu prices",
+);
 assert.match(gameScene, /calculateCharacterTravelDurationMs/u, "workers must share the owner's movement-speed calculation");
 assert.doesNotMatch(releaseServerBody, /homeX|homeY/u, "servers must stay where service finishes instead of lining up at home");
 assert.doesNotMatch(read("src/game/entities/Player.ts"), /new Phaser\.Math\.Vector2/u, "player input must not allocate vectors every frame");
 assert.match(read("src/game/systems/ProgressionSystem.ts"), /NO_FEVER_TRANSITION/u, "idle fever updates must avoid state allocations");
 assert.match(read("src/game/scenes/GameScene.ts"), /지금 저장/u, "the pause menu must expose manual save");
+assert.match(gameScene, /private beginLiveShop/u, "opening the shop must use a live simulation overlay");
+assert.match(gameScene, /beginLiveShop\(\)[\s\S]*?setMusicPaused\(false\)/u, "shop music must keep playing");
+const playerSource = read("src/game/entities/Player.ts");
+assert.match(playerSource, /getCustomizedPlayerTextureKey/u, "avatar cosmetics must be baked into movement textures");
+assert.doesNotMatch(playerSource, /avatarGraphics/u, "avatar cosmetics must not follow the player as a delayed overlay");
+assert.match(read("src/game/art/SceneDecor.ts"), /facilityObjects/u, "purchased facilities need dedicated placed objects");
+assert.match(read("src/game/art/PixelArtFactory.ts"), /createFacilityTextures/u, "facility products need actual pixel-art textures");
 const soundManager = read("src/game/audio/SoundManager.ts");
 assert.match(soundManager, /setMenuMusic/u, "menu music must be supported");
 assert.match(soundManager, /toggleMusicMute/u, "music must have an independent mute control");
