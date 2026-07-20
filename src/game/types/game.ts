@@ -258,8 +258,6 @@ export interface EconomyState {
   readonly money: number;
   readonly customerCount: number;
   readonly rating: number;
-  /** Runtime-only testing flag. SaveSystem deliberately ignores it. */
-  readonly infiniteMoney: boolean;
 }
 
 export interface SaleResult {

@@ -29,7 +29,6 @@ export class HUD {
   private displayedFeverFillColor = -1;
   private displayedFeverFillWidth = -1;
   private displayedPromotionText = "";
-  private infiniteMoney = false;
 
   public constructor(scene: Phaser.Scene) {
     this.scene = scene;
@@ -133,7 +132,6 @@ export class HUD {
   }
 
   public update(deltaMs: number): void {
-    if (this.infiniteMoney) return;
     if (Math.round(this.displayedMoney) === this.targetMoney) {
       return;
     }
@@ -145,13 +143,8 @@ export class HUD {
     this.moneyText.setText(formatCurrency(Math.round(this.displayedMoney)));
   }
 
-  public setMoney(money: number, animate = true, infiniteMoney = false): void {
-    this.infiniteMoney = infiniteMoney;
+  public setMoney(money: number, animate = true): void {
     this.targetMoney = Math.max(0, Math.round(money));
-    if (infiniteMoney) {
-      this.moneyText.setText("∞냥");
-      return;
-    }
     if (!animate) {
       this.displayedMoney = this.targetMoney;
       this.moneyText.setText(formatCurrency(this.targetMoney));
