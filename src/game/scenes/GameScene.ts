@@ -120,7 +120,7 @@ const TABLE_POSITIONS = [
 ] as const;
 
 // TEMP: Full-playthrough QA button. Remove with the matching button in create().
-const TEMP_TEST_MONEY = 1_000_000_000_000_000;
+const INFINITE_TEST_MONEY_REGISTRY_KEY = "meow-infinite-test-money";
 
 const SERVER_HOME_POSITIONS = [
   { x: 316, y: 124 },
@@ -272,6 +272,9 @@ export class GameScene extends Phaser.Scene {
         });
       }
     }
+    if (this.registry.get(INFINITE_TEST_MONEY_REGISTRY_KEY) === true) {
+      this.economy.debugSetInfiniteMoney(true);
+    }
     setActiveMenuChapter(this.progression.getChapterId());
     this.customization.setActiveChapter(this.progression.getChapterId());
     const debugStage = readDebugStage(window.location.search);
@@ -337,7 +340,10 @@ export class GameScene extends Phaser.Scene {
       if (this.tutorialOverlay !== undefined || this.offlineOverlay !== undefined || this.clearing) return;
       this.openStyleShop();
     }, { width: 44, height: 18, primary: false, fontSize: 7 }).setDepth(920);
-    new PixelButton(this, 325, 68, "테스트 ∞냥", () => this.grantTemporaryTestMoney(), {
+    const infiniteMoneyButton = new PixelButton(this, 325, 68, this.economy.isInfiniteMoneyEnabled() ? "∞냥 ON" : "테스트 ∞냥", () => {
+      this.toggleInfiniteTestMoney();
+      infiniteMoneyButton.setText(this.economy.isInfiniteMoneyEnabled() ? "∞냥 ON" : "테스트 ∞냥");
+    }, {
       width: 44,
       height: 18,
       primary: false,
@@ -620,10 +626,12 @@ export class GameScene extends Phaser.Scene {
       .setVisible(false);
   }
 
-  private grantTemporaryTestMoney(): void {
-    this.economy.debugSetMoney(Math.max(this.economy.getMoney(), TEMP_TEST_MONEY));
-    this.saveProgress();
-    this.toast.show("테스트 자금 1,000조냥 지급!");
+  private toggleInfiniteTestMoney(): void {
+    const enabled = !this.economy.isInfiniteMoneyEnabled();
+    this.economy.debugSetInfiniteMoney(enabled);
+    this.registry.set(INFINITE_TEST_MONEY_REGISTRY_KEY, enabled);
+    this.refreshUi(false);
+    this.toast.show(enabled ? "∞냥 테스트 모드 ON · 모든 구매 무료" : "∞냥 테스트 모드 OFF");
   }
 
   private createInputHandlers(): void {
@@ -1819,7 +1827,7 @@ export class GameScene extends Phaser.Scene {
       return;
     }
     const state = this.economy.getState();
-    this.hud.setMoney(state.money, animateMoney);
+    this.hud.setMoney(state.money, animateMoney, state.infiniteMoney);
     this.hud.setRating(state.rating);
     this.hud.setFame(this.getCurrentFameBenefits().level);
     this.hud.setCustomerCount(state.customerCount);
@@ -2883,6 +2891,10 @@ export class GameScene extends Phaser.Scene {
         })),
       }),
       grantMoney: (amount = 10_000) => this.economy.addMoney(Math.max(0, Math.round(amount))),
+      toggleInfiniteMoney: () => {
+        this.toggleInfiniteTestMoney();
+        return this.economy.isInfiniteMoneyEnabled();
+      },
       setRating: (rating = 5) => this.economy.setRating(rating),
       setWorldPhase: (phase) => {
         const state = this.dayNight.setPhase(phase);
