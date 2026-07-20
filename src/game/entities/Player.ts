@@ -2,6 +2,7 @@ import Phaser from "phaser";
 import type { MenuItemId } from "../types/game";
 import { touchInput } from "../input/TouchControls";
 import type { AvatarLook } from "../systems/CustomizationSystem";
+import { CHARACTER_MOVE_SPEED_PX_PER_SECOND } from "../systems/WorkerMovementRules";
 
 export type PlayerFacing = "down" | "up" | "left" | "right";
 
@@ -67,8 +68,8 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
     if (directionX !== 0 || directionY !== 0) {
       const directionScale = directionX !== 0 && directionY !== 0 ? Math.SQRT1_2 : 1;
-      const velocityX = directionX * 78 * directionScale;
-      const velocityY = directionY * 78 * directionScale;
+      const velocityX = directionX * CHARACTER_MOVE_SPEED_PX_PER_SECOND * directionScale;
+      const velocityY = directionY * CHARACTER_MOVE_SPEED_PX_PER_SECOND * directionScale;
       body.setVelocity(velocityX, velocityY);
       this.updateFacing(velocityX, velocityY);
       this.animationClock += deltaMs;

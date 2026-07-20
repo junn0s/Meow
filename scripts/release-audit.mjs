@@ -59,12 +59,15 @@ assert.match(performanceSystem, /reflectionsEnabled: false/u, "battery mode must
 assert.match(atmosphere, /atmosphereUpdateIntervalMs/u, "atmosphere updates must be throttled by profile");
 assert.match(main, /"low-power"/u, "touch devices must request a low-power GPU profile");
 const gameScene = read("src/game/scenes/GameScene.ts");
+const releaseServerBody = gameScene.match(/private releaseServer\([\s\S]*?\n  \}\n\n  private configureDebugApi/u)?.[0] ?? "";
 assert.match(gameScene, /paymentPool/u, "payment sprites must be pooled instead of recreated");
 assert.match(gameScene, /startPlayerCooking/u, "the owner must be able to start cooking at a worktop");
 assert.match(gameScene, /cookingAgent: automated \? "chef" : "player"/u, "manual orders must wait for direct player cooking");
 assert.match(gameScene, /assignChefToWaitingCooking/u, "idle chefs must claim queued parallel-cooking tickets");
 assert.match(read("src/game/entities/CookingStation.ts"), /hasPendingPlayerTicket/u, "worktops must expose player-owned cooking tickets");
 assert.match(read("src/game/entities/CookingStation.ts"), /조리×/u, "parallel cooking must be visible on each worktop");
+assert.match(gameScene, /calculateCharacterTravelDurationMs/u, "workers must share the owner's movement-speed calculation");
+assert.doesNotMatch(releaseServerBody, /homeX|homeY/u, "servers must stay where service finishes instead of lining up at home");
 assert.doesNotMatch(read("src/game/entities/Player.ts"), /new Phaser\.Math\.Vector2/u, "player input must not allocate vectors every frame");
 assert.match(read("src/game/systems/ProgressionSystem.ts"), /NO_FEVER_TRANSITION/u, "idle fever updates must avoid state allocations");
 assert.match(read("src/game/scenes/GameScene.ts"), /지금 저장/u, "the pause menu must expose manual save");

@@ -74,6 +74,8 @@ Orders taken by the owner wait at their matching worktop until the owner starts 
 
 Same-dish chef concurrency is `min(hired chefs, that dish's worktop slots)`. With three chefs and a C2 fishcake worktop, two chefs cook fishcake simultaneously while the third chef can prepare another dish. Active worktops show `조리×2` or `조리×3`, and completed servings stack as separate ready dishes.
 
+Chefs and servers walk at the same base speed as the owner cat. After a delivery, servers remain at the handoff location instead of returning to a right-side lineup.
+
 ## Source Directory
 
 ```text

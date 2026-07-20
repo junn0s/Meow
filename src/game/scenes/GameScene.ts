@@ -25,6 +25,7 @@ import {
   getPerformanceProfile,
   type PerformanceProfile,
 } from "../systems/PerformanceSystem";
+import { calculateCharacterTravelDurationMs } from "../systems/WorkerMovementRules";
 import {
   CustomizationSystem,
   AVATAR_ITEMS,
@@ -965,11 +966,18 @@ export class GameScene extends Phaser.Scene {
       if (chef !== undefined) {
         chef.assignedStationId = station.menuItemId;
         chef.assignedCustomerId = customer.customerId;
+        this.tweens.killTweensOf(chef.sprite);
         this.tweens.add({
           targets: chef.sprite,
           x: station.x,
           y: station.y + 18,
-          duration: 220,
+          duration: calculateCharacterTravelDurationMs(
+            chef.sprite.x,
+            chef.sprite.y,
+            station.x,
+            station.y + 18,
+          ),
+          ease: "Linear",
           onUpdate: () => updateCharacterDepth(chef.sprite, 70),
         });
         this.pulseWorker(chef.sprite);
@@ -994,11 +1002,18 @@ export class GameScene extends Phaser.Scene {
     chef.assignedCustomerId = customer.customerId;
     chef.assignedStationId = station.menuItemId;
     chef.sprite.setTexture(`chef-${chef.ordinal}-1`).setFlipX(station.x < chef.sprite.x);
+    this.tweens.killTweensOf(chef.sprite);
     this.tweens.add({
       targets: chef.sprite,
       x: station.x + 10,
       y: station.y + 18,
-      duration: 220,
+      duration: calculateCharacterTravelDurationMs(
+        chef.sprite.x,
+        chef.sprite.y,
+        station.x + 10,
+        station.y + 18,
+      ),
+      ease: "Linear",
       onUpdate: () => updateCharacterDepth(chef.sprite, 70),
     });
     return chef.id;
@@ -1026,11 +1041,18 @@ export class GameScene extends Phaser.Scene {
       chef.sprite
         .setTexture(`chef-${chef.ordinal}-1`)
         .setFlipX(station.x < chef.sprite.x);
+      this.tweens.killTweensOf(chef.sprite);
       this.tweens.add({
         targets: chef.sprite,
         x: station.x,
         y: station.y + 18,
-        duration: 220,
+        duration: calculateCharacterTravelDurationMs(
+          chef.sprite.x,
+          chef.sprite.y,
+          station.x,
+          station.y + 18,
+        ),
+        ease: "Linear",
         onUpdate: () => updateCharacterDepth(chef.sprite, 70),
       });
       this.pulseWorker(chef.sprite);
@@ -1090,14 +1112,22 @@ export class GameScene extends Phaser.Scene {
       const actionTime = getWorkerActionTimeMs("chef", chef.ordinal)
         * this.customization.getFacilityEffects().chefActionTimeMultiplier
         / this.progression.getFeverWorkerSpeedMultiplier();
+      const travelDurationMs = calculateCharacterTravelDurationMs(
+        chef.sprite.x,
+        chef.sprite.y,
+        customer.x - 15,
+        customer.y,
+      );
+      this.tweens.killTweensOf(chef.sprite);
       this.tweens.add({
         targets: chef.sprite,
         x: customer.x - 15,
         y: customer.y,
-        duration: Math.min(320, actionTime * 0.35),
+        duration: travelDurationMs,
+        ease: "Linear",
         onUpdate: () => updateCharacterDepth(chef.sprite, 70),
       });
-      this.time.delayedCall(actionTime, () => {
+      this.time.delayedCall(Math.max(actionTime, travelDurationMs), () => {
         this.chefAssignedCustomers.delete(customer.customerId);
         if (!chef.sprite.active || !this.acceptOrder(customer, true, chef.id)) {
           this.releaseChef(chef.id);
@@ -1148,53 +1178,61 @@ export class GameScene extends Phaser.Scene {
     const actionTime = getWorkerActionTimeMs("server", worker.ordinal)
       * this.customization.getFacilityEffects().serverActionTimeMultiplier
       / this.progression.getFeverWorkerSpeedMultiplier();
+    const abortDelivery = (): void => {
+      if (!worker.busy) return;
+      if (ticket.customerId === target.customerId) {
+        this.ticketStats.cancelled += 1;
+      } else {
+        station.returnReadyTicket(ticket);
+      }
+      this.releaseServer(worker);
+    };
     this.tweens.add({
       targets: server,
       x: station.x + 19,
       y: station.y + 20,
-      duration: Math.round(actionTime * 0.2),
-      ease: "Sine.InOut",
+      duration: calculateCharacterTravelDurationMs(
+        server.x,
+        server.y,
+        station.x + 19,
+        station.y + 20,
+      ),
+      ease: "Linear",
       onUpdate: () => updateCharacterDepth(server, 50),
       onComplete: () => {
         if (!server.active || !canReceiveFood(target, ticket)) {
-          if (ticket.customerId === target.customerId) {
-            this.ticketStats.cancelled += 1;
-          } else {
-            station.returnReadyTicket(ticket);
-          }
-          this.releaseServer(worker);
+          abortDelivery();
           return;
         }
-        server.setFlipX(target.x < server.x);
-        this.tweens.add({
-          targets: server,
-          x: target.x + 17,
-          y: target.y,
-          duration: Math.round(actionTime * 0.45),
-          ease: "Sine.InOut",
-          onUpdate: () => updateCharacterDepth(server, 50),
-          onComplete: () => {
-            if (target.active && canReceiveFood(target, ticket)) {
-              this.serveCustomer(target, true, worker, ticket);
-            } else {
-              if (ticket.customerId === target.customerId) {
-                this.ticketStats.cancelled += 1;
+        this.time.delayedCall(Math.max(80, Math.round(actionTime * 0.1)), () => {
+          if (!worker.busy || !server.active || !canReceiveFood(target, ticket)) {
+            abortDelivery();
+            return;
+          }
+          server.setFlipX(target.x < server.x);
+          this.tweens.add({
+            targets: server,
+            x: target.x + 17,
+            y: target.y,
+            duration: calculateCharacterTravelDurationMs(
+              server.x,
+              server.y,
+              target.x + 17,
+              target.y,
+            ),
+            ease: "Linear",
+            onUpdate: () => updateCharacterDepth(server, 50),
+            onComplete: () => {
+              if (target.active && canReceiveFood(target, ticket)) {
+                this.serveCustomer(target, true, worker, ticket);
               } else {
-                station.returnReadyTicket(ticket);
+                abortDelivery();
+                return;
               }
-            }
-            this.serverTargetCustomerIds.delete(target.customerId);
-            server.setFlipX(worker.homeX < server.x);
-            this.tweens.add({
-              targets: server,
-              x: worker.homeX,
-              y: worker.homeY,
-              duration: Math.round(actionTime * 0.25),
-              ease: "Sine.InOut",
-              onUpdate: () => updateCharacterDepth(server, 50),
-              onComplete: () => this.releaseServer(worker, false),
-            });
-          },
+              this.serverTargetCustomerIds.delete(target.customerId);
+              this.releaseServer(worker);
+            },
+          });
         });
       },
     });
@@ -2618,12 +2656,18 @@ export class GameScene extends Phaser.Scene {
       targets: worker.sprite,
       x: worker.homeX,
       y: worker.homeY,
-      duration: 260,
+      duration: calculateCharacterTravelDurationMs(
+        worker.sprite.x,
+        worker.sprite.y,
+        worker.homeX,
+        worker.homeY,
+      ),
+      ease: "Linear",
       onComplete: () => worker.sprite.setDepth(116),
     });
   }
 
-  private releaseServer(worker: WorkerAgent, returnHome = true): void {
+  private releaseServer(worker: WorkerAgent): void {
     if (worker.assignedCustomerId !== undefined) {
       this.serverTargetCustomerIds.delete(worker.assignedCustomerId);
     }
@@ -2632,23 +2676,7 @@ export class GameScene extends Phaser.Scene {
     worker.assignedStationId = undefined;
     this.tweens.killTweensOf(worker.sprite);
     worker.sprite.setTexture(`server-${worker.ordinal}-0`);
-    if (!returnHome) {
-      worker.sprite
-        .setPosition(worker.homeX, worker.homeY)
-        .setFlipX(false)
-        .setDepth(150 + worker.homeY);
-      return;
-    }
-    worker.sprite.setFlipX(worker.homeX < worker.sprite.x);
-    this.tweens.add({
-      targets: worker.sprite,
-      x: worker.homeX,
-      y: worker.homeY,
-      duration: 280,
-      onComplete: () => worker.sprite
-        .setFlipX(false)
-        .setDepth(150 + worker.homeY),
-    });
+    updateCharacterDepth(worker.sprite, 50);
   }
 
   private configureDebugApi(): void {

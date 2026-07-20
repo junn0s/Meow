@@ -11,6 +11,10 @@ import { MUSIC_PHASE_SLOTS, MUSIC_WORLD_CYCLE_MS } from "../src/game/data/musicS
 import { getMusicPlaylist } from "../src/game/audio/musicTracks";
 import { SoundManager } from "../src/game/audio/SoundManager";
 import { getPerformanceProfile } from "../src/game/systems/PerformanceSystem";
+import {
+  calculateCharacterTravelDurationMs,
+  CHARACTER_MOVE_SPEED_PX_PER_SECOND,
+} from "../src/game/systems/WorkerMovementRules";
 import { EconomySystem } from "../src/game/systems/EconomySystem";
 import { ProgressionSystem } from "../src/game/systems/ProgressionSystem";
 import {
@@ -361,6 +365,9 @@ assert.equal(canSpawnCustomer([
 ], 2), false, "the visible waiting line must be capped at two guests");
 
 const touchInput = new TouchInputState();
+assert.equal(CHARACTER_MOVE_SPEED_PX_PER_SECOND, 78);
+assert.equal(calculateCharacterTravelDurationMs(0, 0, 78, 0), 1_000);
+assert.equal(calculateCharacterTravelDurationMs(0, 0, 0, 156), 2_000);
 touchInput.pressDirection(11, "left");
 touchInput.pressDirection(12, "up");
 assert.equal(touchInput.isDirectionDown("left"), true);
