@@ -31,6 +31,30 @@
   initial-value: #090e20;
 }
 
+@property --scene-primary {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #0c1227;
+}
+
+@property --scene-secondary {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #27304d;
+}
+
+@property --scene-accent {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #ffd56a;
+}
+
+@property --scene-shadow {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #080d1e;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -57,6 +81,12 @@ body {
   --cloud-color: #53618855;
   --window-color: #ffd56a;
   --star-color: #dce8ff;
+  --scene-primary: var(--building-color);
+  --scene-secondary: var(--building-edge);
+  --scene-accent: var(--window-color);
+  --scene-shadow: var(--land-color);
+  --scene-detail: #8a4f37;
+  --chapter-sky-decoration: linear-gradient(transparent, transparent);
   position: relative;
   isolation: isolate;
   overflow: hidden;
@@ -73,7 +103,11 @@ body {
     --sky-top 1.2s ease,
     --sky-middle 1.2s ease,
     --sky-horizon 1.2s ease,
-    --land-color 1.2s ease;
+    --land-color 1.2s ease,
+    --scene-primary 1.2s ease,
+    --scene-secondary 1.2s ease,
+    --scene-accent 1.2s ease,
+    --scene-shadow 1.2s ease;
 }
 
 body[data-game-phase="day"] {
@@ -136,6 +170,262 @@ body[data-game-phase="dawn"] {
   --star-color: #dce4ff88;
 }
 
+/* CH.2 · Sunset Cocktail Bar — ocean, sand and palms. */
+body[data-game-chapter="2"][data-game-phase="day"] {
+  --sky-top: #41a9c4;
+  --sky-middle: #79d0d7;
+  --sky-horizon: #f4d89b;
+  --land-color: #d7b36f;
+  --building-color: #176779;
+  --building-edge: #4fd1cf;
+  --window-color: #ffe095;
+  --scene-primary: #13748b;
+  --scene-secondary: #5adbd4;
+  --scene-accent: #f4cf83;
+  --scene-shadow: #164f4b;
+  --scene-detail: #b87343;
+}
+
+body[data-game-chapter="2"][data-game-phase="sunset"] {
+  --sky-top: #57477f;
+  --sky-middle: #d8647b;
+  --sky-horizon: #ffae68;
+  --land-color: #9f6d58;
+  --building-color: #164b68;
+  --building-edge: #39aeb3;
+  --window-color: #ffd173;
+  --scene-primary: #175a78;
+  --scene-secondary: #45c2c3;
+  --scene-accent: #e5aa69;
+  --scene-shadow: #173f44;
+  --scene-detail: #8a533a;
+}
+
+body[data-game-chapter="2"][data-game-phase="night"] {
+  --sky-top: #06142b;
+  --sky-middle: #0b2e4a;
+  --sky-horizon: #14516b;
+  --land-color: #102f3a;
+  --building-color: #0c3248;
+  --building-edge: #176b78;
+  --window-color: #ffcf72;
+  --scene-primary: #0c405b;
+  --scene-secondary: #1b8791;
+  --scene-accent: #d89a5e;
+  --scene-shadow: #092b32;
+  --scene-detail: #70412f;
+}
+
+body[data-game-chapter="2"][data-game-phase="dawn"] {
+  --sky-top: #3e6487;
+  --sky-middle: #a77793;
+  --sky-horizon: #edac8a;
+  --land-color: #9d8069;
+  --building-color: #285b70;
+  --building-edge: #55b7b5;
+  --window-color: #f8cc82;
+  --scene-primary: #276b80;
+  --scene-secondary: #61c9c2;
+  --scene-accent: #d9ad72;
+  --scene-shadow: #315a51;
+  --scene-detail: #996243;
+}
+
+/* CH.3 · Hanok Feast — layered mountains, tiled roofs and warm lattice windows. */
+body[data-game-chapter="3"] {
+  --chapter-sky-decoration:
+    linear-gradient(145deg, transparent 0 58%, color-mix(in srgb, var(--scene-shadow) 46%, transparent) 59% 72%, transparent 73%) 0 100% / 55% 48% no-repeat,
+    linear-gradient(215deg, transparent 0 57%, color-mix(in srgb, var(--scene-primary) 42%, transparent) 58% 74%, transparent 75%) 100% 100% / 58% 43% no-repeat;
+}
+
+body[data-game-chapter="3"][data-game-phase="day"] {
+  --sky-top: #82ada9;
+  --sky-middle: #b9c9b6;
+  --sky-horizon: #ead9b7;
+  --land-color: #756650;
+  --building-color: #59483a;
+  --building-edge: #8d7456;
+  --window-color: #f3c96f;
+  --scene-primary: #514036;
+  --scene-secondary: #8a7253;
+  --scene-accent: #ecc66e;
+  --scene-shadow: #33463a;
+  --scene-detail: #a6493f;
+}
+
+body[data-game-chapter="3"][data-game-phase="sunset"] {
+  --sky-top: #6d5d75;
+  --sky-middle: #a76d67;
+  --sky-horizon: #dd9666;
+  --land-color: #584b3f;
+  --building-color: #44352f;
+  --building-edge: #72523e;
+  --window-color: #f1b85f;
+  --scene-primary: #3c302c;
+  --scene-secondary: #75563f;
+  --scene-accent: #e9ad58;
+  --scene-shadow: #28382f;
+  --scene-detail: #963f38;
+}
+
+body[data-game-chapter="3"][data-game-phase="night"] {
+  --sky-top: #0c1724;
+  --sky-middle: #1d2b34;
+  --sky-horizon: #34413e;
+  --land-color: #252925;
+  --building-color: #27211f;
+  --building-edge: #4a3a2c;
+  --window-color: #efb456;
+  --scene-primary: #211c1b;
+  --scene-secondary: #4c3c2e;
+  --scene-accent: #eab45b;
+  --scene-shadow: #16241d;
+  --scene-detail: #74332f;
+}
+
+body[data-game-chapter="3"][data-game-phase="dawn"] {
+  --sky-top: #596f7e;
+  --sky-middle: #9b8580;
+  --sky-horizon: #d2a47c;
+  --land-color: #65594b;
+  --building-color: #514339;
+  --building-edge: #80654b;
+  --window-color: #edbd68;
+  --scene-primary: #493c34;
+  --scene-secondary: #80664c;
+  --scene-accent: #e6bd6a;
+  --scene-shadow: #314137;
+  --scene-detail: #93453c;
+}
+
+/* CH.4 · Grand Restaurant — European façades, awnings and golden windows. */
+body[data-game-chapter="4"][data-game-phase="day"] {
+  --sky-top: #8fa8c3;
+  --sky-middle: #c4c6cb;
+  --sky-horizon: #ead8cb;
+  --land-color: #635864;
+  --building-color: #5e4958;
+  --building-edge: #947584;
+  --window-color: #f4d48c;
+  --scene-primary: #513d4b;
+  --scene-secondary: #927184;
+  --scene-accent: #edc979;
+  --scene-shadow: #302a37;
+  --scene-detail: #7c2c49;
+}
+
+body[data-game-chapter="4"][data-game-phase="sunset"] {
+  --sky-top: #5c506b;
+  --sky-middle: #9f6872;
+  --sky-horizon: #ce8977;
+  --land-color: #413942;
+  --building-color: #493543;
+  --building-edge: #765166;
+  --window-color: #f2c674;
+  --scene-primary: #3f2f3b;
+  --scene-secondary: #795268;
+  --scene-accent: #edbe6d;
+  --scene-shadow: #27222d;
+  --scene-detail: #6f2945;
+}
+
+body[data-game-chapter="4"][data-game-phase="night"] {
+  --sky-top: #090d20;
+  --sky-middle: #1a1930;
+  --sky-horizon: #302b43;
+  --land-color: #1c1924;
+  --building-color: #291f2c;
+  --building-edge: #55344c;
+  --window-color: #f0ca78;
+  --scene-primary: #211a26;
+  --scene-secondary: #57364f;
+  --scene-accent: #f1cb78;
+  --scene-shadow: #12101a;
+  --scene-detail: #711e43;
+}
+
+body[data-game-chapter="4"][data-game-phase="dawn"] {
+  --sky-top: #58677f;
+  --sky-middle: #8e7c8c;
+  --sky-horizon: #d2a18c;
+  --land-color: #49414b;
+  --building-color: #4b3947;
+  --building-edge: #7d596e;
+  --window-color: #efca83;
+  --scene-primary: #41333f;
+  --scene-secondary: #805c70;
+  --scene-accent: #ebc77f;
+  --scene-shadow: #292631;
+  --scene-detail: #762b49;
+}
+
+/* CH.5 · Omakase Alley — machiya, shoji, noren and paper lanterns. */
+body[data-game-chapter="5"] {
+  --chapter-sky-decoration:
+    linear-gradient(155deg, transparent 0 61%, color-mix(in srgb, var(--scene-primary) 35%, transparent) 62% 74%, transparent 75%) 0 100% / 62% 39% no-repeat,
+    linear-gradient(205deg, transparent 0 61%, color-mix(in srgb, var(--scene-shadow) 42%, transparent) 62% 76%, transparent 77%) 100% 100% / 58% 36% no-repeat;
+}
+
+body[data-game-chapter="5"][data-game-phase="day"] {
+  --sky-top: #8bafb5;
+  --sky-middle: #bdc9c4;
+  --sky-horizon: #e4ddca;
+  --land-color: #75634f;
+  --building-color: #46545b;
+  --building-edge: #71838a;
+  --window-color: #e9c885;
+  --scene-primary: #273b4c;
+  --scene-secondary: #6e665e;
+  --scene-accent: #e8c985;
+  --scene-shadow: #25323a;
+  --scene-detail: #a24d43;
+}
+
+body[data-game-chapter="5"][data-game-phase="sunset"] {
+  --sky-top: #536078;
+  --sky-middle: #90717b;
+  --sky-horizon: #ce8b78;
+  --land-color: #5c4d40;
+  --building-color: #33414b;
+  --building-edge: #5b6570;
+  --window-color: #e8bc73;
+  --scene-primary: #203447;
+  --scene-secondary: #62574f;
+  --scene-accent: #e6b96f;
+  --scene-shadow: #202d35;
+  --scene-detail: #963f3d;
+}
+
+body[data-game-chapter="5"][data-game-phase="night"] {
+  --sky-top: #060d1c;
+  --sky-middle: #102534;
+  --sky-horizon: #233641;
+  --land-color: #1e2224;
+  --building-color: #1c2b35;
+  --building-edge: #374957;
+  --window-color: #e9b96d;
+  --scene-primary: #142739;
+  --scene-secondary: #4a4641;
+  --scene-accent: #e9b96d;
+  --scene-shadow: #101b23;
+  --scene-detail: #8d3437;
+}
+
+body[data-game-chapter="5"][data-game-phase="dawn"] {
+  --sky-top: #536d7f;
+  --sky-middle: #8a8589;
+  --sky-horizon: #d19c85;
+  --land-color: #625447;
+  --building-color: #3e4d54;
+  --building-edge: #687078;
+  --window-color: #e7c17e;
+  --scene-primary: #263a4b;
+  --scene-secondary: #675c53;
+  --scene-accent: #e7c17e;
+  --scene-shadow: #29373d;
+  --scene-detail: #98433f;
+}
+
 button,
 canvas,
 [role="application"] {
@@ -156,6 +446,7 @@ body::before {
   content: "";
   pointer-events: none;
   background:
+    var(--chapter-sky-decoration),
     linear-gradient(var(--cloud-color), var(--cloud-color)) 8% 12% / 88px 10px no-repeat,
     linear-gradient(var(--cloud-color), var(--cloud-color)) 11% 10% / 42px 8px no-repeat,
     linear-gradient(var(--cloud-color), var(--cloud-color)) 91% 34% / 112px 11px no-repeat,
@@ -191,6 +482,89 @@ body::after {
   );
   opacity: 0.92;
   image-rendering: pixelated;
+}
+
+body[data-game-chapter="2"]::after {
+  height: 40vh;
+  min-height: 230px;
+  background:
+    linear-gradient(28deg, transparent 0 42%, var(--scene-shadow) 43% 56%, transparent 57%) 1% 1% / 98px 55px no-repeat,
+    linear-gradient(152deg, transparent 0 42%, var(--scene-shadow) 43% 56%, transparent 57%) 5% 0 / 96px 58px no-repeat,
+    linear-gradient(72deg, transparent 0 43%, var(--scene-shadow) 44% 56%, transparent 57%) 7% 0 / 66px 74px no-repeat,
+    linear-gradient(var(--scene-shadow), var(--scene-shadow)) 6% 8% / 74px 11px no-repeat,
+    linear-gradient(var(--scene-shadow), var(--scene-shadow)) 3% 13% / 43px 10px no-repeat,
+    linear-gradient(var(--scene-shadow), var(--scene-shadow)) 10% 2% / 13px 58px no-repeat,
+    linear-gradient(98deg, transparent 0 43%, var(--scene-detail) 44% 57%, transparent 58%) 8% 17% / 34px 145px no-repeat,
+    linear-gradient(332deg, transparent 0 42%, var(--scene-shadow) 43% 56%, transparent 57%) 92% 2% / 98px 55px no-repeat,
+    linear-gradient(208deg, transparent 0 42%, var(--scene-shadow) 43% 56%, transparent 57%) 96% 0 / 96px 58px no-repeat,
+    linear-gradient(288deg, transparent 0 43%, var(--scene-shadow) 44% 56%, transparent 57%) 94% 0 / 66px 74px no-repeat,
+    linear-gradient(var(--scene-shadow), var(--scene-shadow)) 94% 13% / 76px 11px no-repeat,
+    linear-gradient(var(--scene-shadow), var(--scene-shadow)) 91% 7% / 48px 10px no-repeat,
+    linear-gradient(var(--scene-shadow), var(--scene-shadow)) 89% 18% / 13px 55px no-repeat,
+    linear-gradient(82deg, transparent 0 43%, var(--scene-detail) 44% 57%, transparent 58%) 89% 23% / 34px 130px no-repeat,
+    repeating-linear-gradient(90deg, transparent 0 38px, color-mix(in srgb, var(--scene-secondary) 70%, transparent) 38px 45px, transparent 45px 82px) 0 54% / 100% 8px repeat-x,
+    repeating-linear-gradient(0deg, var(--scene-primary) 0 13px, var(--scene-secondary) 13px 17px, var(--scene-primary) 17px 29px) 0 42% / 100% 42% no-repeat,
+    repeating-linear-gradient(90deg, var(--scene-accent) 0 44px, color-mix(in srgb, var(--scene-accent) 88%, #8b5c3c) 44px 46px) 0 82% / 100% 18% no-repeat;
+  clip-path: none;
+  opacity: 0.96;
+}
+
+body[data-game-chapter="3"]::after {
+  height: 38vh;
+  min-height: 215px;
+  background:
+    radial-gradient(circle, var(--scene-accent) 0 3px, transparent 4px) 12px 31px / 78px 63px repeat,
+    repeating-linear-gradient(90deg, transparent 0 17px, color-mix(in srgb, var(--scene-secondary) 75%, transparent) 17px 20px, transparent 20px 37px) 0 44% / 100% 52% no-repeat,
+    repeating-linear-gradient(0deg, transparent 0 20px, color-mix(in srgb, var(--scene-secondary) 72%, transparent) 20px 23px, transparent 23px 43px) 0 48% / 100% 48% no-repeat,
+    linear-gradient(var(--scene-detail), var(--scene-detail)) 0 39% / 100% 9px no-repeat,
+    linear-gradient(var(--scene-primary), var(--scene-primary)) 0 40% / 100% 60% no-repeat,
+    linear-gradient(var(--scene-shadow), var(--scene-shadow));
+  clip-path: polygon(
+    0 42%, 3% 42%, 9% 25%, 15% 42%, 20% 42%, 26% 17%, 33% 42%,
+    39% 42%, 45% 27%, 51% 42%, 57% 42%, 64% 19%, 71% 42%,
+    77% 42%, 83% 24%, 90% 42%, 94% 42%, 97% 31%, 100% 42%,
+    100% 100%, 0 100%
+  );
+  opacity: 0.96;
+}
+
+body[data-game-chapter="4"]::after {
+  height: 40vh;
+  min-height: 225px;
+  background:
+    repeating-linear-gradient(135deg, var(--scene-detail) 0 8px, color-mix(in srgb, var(--scene-detail) 72%, #d9a36a) 8px 16px) 0 48% / 100% 13px no-repeat,
+    radial-gradient(ellipse, var(--scene-accent) 0 5px, transparent 6px) 17px 16px / 62px 54px repeat,
+    repeating-linear-gradient(90deg, transparent 0 12px, var(--scene-secondary) 12px 15px, transparent 15px 38px) 0 35% / 100% 65% no-repeat,
+    repeating-linear-gradient(0deg, transparent 0 24px, var(--scene-secondary) 24px 27px, transparent 27px 51px) 0 38% / 100% 62% no-repeat,
+    linear-gradient(var(--scene-primary), var(--scene-primary));
+  clip-path: polygon(
+    0 31%, 4% 31%, 4% 18%, 11% 18%, 11% 34%, 17% 34%,
+    17% 9%, 24% 9%, 24% 30%, 31% 30%, 31% 15%, 39% 15%,
+    39% 35%, 46% 35%, 46% 11%, 55% 11%, 55% 27%, 62% 27%,
+    62% 6%, 70% 6%, 70% 31%, 77% 31%, 77% 14%, 85% 14%,
+    85% 34%, 92% 34%, 92% 20%, 97% 20%, 97% 31%, 100% 31%,
+    100% 100%, 0 100%
+  );
+  opacity: 0.97;
+}
+
+body[data-game-chapter="5"]::after {
+  height: 38vh;
+  min-height: 215px;
+  background:
+    radial-gradient(circle, var(--scene-detail) 0 5px, var(--scene-accent) 6px 7px, transparent 8px) 8px 28px / 64px 73px repeat,
+    repeating-linear-gradient(90deg, transparent 0 22px, var(--scene-accent) 22px 25px, transparent 25px 50px) 0 48% / 100% 24px no-repeat,
+    repeating-linear-gradient(90deg, transparent 0 24px, var(--scene-secondary) 24px 27px, transparent 27px 52px) 0 51% / 100% 49% no-repeat,
+    repeating-linear-gradient(0deg, transparent 0 22px, color-mix(in srgb, var(--scene-secondary) 80%, transparent) 22px 24px, transparent 24px 46px) 0 52% / 100% 48% no-repeat,
+    linear-gradient(var(--scene-detail), var(--scene-detail)) 0 44% / 100% 8px no-repeat,
+    linear-gradient(var(--scene-primary), var(--scene-primary));
+  clip-path: polygon(
+    0 38%, 5% 38%, 8% 28%, 22% 28%, 25% 38%, 30% 38%,
+    33% 20%, 48% 20%, 51% 38%, 57% 38%, 61% 25%, 76% 25%,
+    79% 38%, 84% 38%, 88% 17%, 97% 17%, 100% 38%,
+    100% 100%, 0 100%
+  );
+  opacity: 0.97;
 }
 
 .app-shell {
